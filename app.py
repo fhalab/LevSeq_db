@@ -2,15 +2,9 @@ import streamlit as st
 import pandas as pd
 from threading import Thread
 import plotly.express as px
-from levseq.seqfit import process_plate_files, gen_seqfitvis, normalise_calculate_stats, process_files
-import warnings
+from levseq.seqfit import normalise_calculate_stats, process_files
 
-warnings.filterwarnings('ignore')
-
-###################################
 from streamlit.runtime.scriptrunner import add_script_run_ctx
-from functionforDownloadButtons import download_button
-###################################
 
 # """
 # The base of this app was developed from:
@@ -30,8 +24,8 @@ def _max_width_():
         unsafe_allow_html=True,
     )
 
-st.title("LevSeq sequence function pairing (Beta mode)")
-st.subheader("For help go to: [help](https://github.com/fhalab/LevSeq)")
+st.title("LevSeq sequence function pairing")
+st.subheader("Beta mode, for issues post [here](https://github.com/fhalab/LevSeq)")
 
 c1, c2 = st.columns([6, 6])
 
@@ -49,7 +43,6 @@ with c2:
         key="2",
         help="To activate 'wide mode', go to the hamburger menu > Settings > turn on 'wide mode'",
     )
-    #background_method = st.text_input('Background Method', 'P|(M&R)')
 
 with c1:
     if variant is not None:
@@ -63,39 +56,7 @@ with c2:
 
 padd3, c0, padd4 = st.columns([1, 6, 1])
 
-def seqfit_runner():
-    st.info(f'Running LevSeq using your files! Results will appear below shortly.')
-    if plate_df is None or variant is None:
-        st.error("Please upload both Variant and Fitness files.")
-        return
-
-    df = process_files(variant, plate_df, plate_name, products)
-    df['# Mutations'] = [len(str(m).split('_')) if m not in ['#N.A.#', '#PARENT#', '-', '#LOW#'] else 0 for m in
-                         df['amino-acid_substitutions'].values]
-
-    # Display the DataFrame
-    st.title("Joined sequence function data")
-    st.dataframe(df)  # Interactive table with scrollbars
-
-    # If you need to do a download
-    # download_button(
-    #     df,
-    #     "seqfit.csv",
-    #     "Download sequence function file",
-    # )
-
-    parent = '#PARENT#'
-    value_columns = products
-    stats_df = pd.DataFrame()
-    for value in value_columns:
-        stats_df = pd.concat([stats_df, normalise_calculate_stats(df, [value], normalise='standard',
-                                             stats_method='mannwhitneyu', parent_label='#PARENT#')])
-
-    stats_df = stats_df.sort_values(by='amount greater than parent mean', ascending=False)
-    # Display the DataFrame
-    st.title("Statistics on the function data")
-    st.dataframe(stats_df)  # Interactive table with scrollbars
-
+def format_dataframes(variant, df):
     variant['id'] = [f'{p}_{w}' for p, w in variant[['Plate', 'Well']].values]
     df['id'] = [f'{p}_{w}' for p, w in df[['Plate', 'Well']].values]
     df.set_index('id', inplace=True)
@@ -114,9 +75,10 @@ def seqfit_runner():
     df['Type'] = [v if v != '#LOW#' else 'Low' for v in df['Type'].values]
     df['Type'] = [v if v != '#N.A.#' else 'Empty' for v in df['Type'].values]
 
-    df['Type'].value_counts()
-    # ---------------------------------------------------------
+    return df
 
+
+def make_alignment_plot(df):
     # Streamlit app
     st.title("Alignment Count Plot")
     st.write("This is a histogram showing alignment counts categorized by type.")
@@ -155,6 +117,7 @@ def seqfit_runner():
     # Display the plot in Streamlit
     st.plotly_chart(fig)
 
+def make_scatter_plot(df):
     # If there are more than 1 in the fitness, plot both.
     # ---------------------------------------------------------
     if len(products) > 1:
@@ -204,6 +167,43 @@ def seqfit_runner():
         )
     )
     st.plotly_chart(fig)
+
+
+def seqfit_runner():
+    st.info(f'Running LevSeq using your files! Results will appear below shortly.')
+
+    if plate_df is None or variant is None:
+        st.error("Please upload both Variant and Fitness files.")
+        return
+
+    # Process variants
+    df = process_files(variant, plate_df, plate_name, products)
+
+    df['# Mutations'] = [len(str(m).split('_')) if m not in ['#N.A.#', '#PARENT#', '-', '#LOW#'] else 0 for m in
+                         df['amino-acid_substitutions'].values]
+
+    # ------------------------ Display paired seq function data as a table
+    st.title("Joined sequence function data")
+    st.dataframe(df)  # Interactive table with scrollbars
+
+    # ------------------------ Stats
+    value_columns = products
+    stats_df = pd.DataFrame()
+    for value in value_columns:
+        stats_df = pd.concat([stats_df, normalise_calculate_stats(df, [value], normalise='standard',
+                                             stats_method='mannwhitneyu', parent_label='#PARENT#')])
+
+    stats_df = stats_df.sort_values(by='amount greater than parent mean', ascending=False)
+    # ------------------------ Display stats data as a table
+    st.title("Statistics on the function data")
+    st.dataframe(stats_df)  # Interactive table with scrollbars
+
+    # -------------------------- Make visualisations
+    df = format_dataframes(df, variant)
+
+    make_alignment_plot(df)
+    make_scatter_plot(df)
+
     st.subheader("Done LevSeq!")
 
 def run_run():
@@ -211,7 +211,6 @@ def run_run():
     add_script_run_ctx(thread)
     thread.start()
     thread.join()
-
 
 with c0:
     if c1 is not None and c2 is not None:
