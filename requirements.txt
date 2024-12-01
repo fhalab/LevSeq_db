@@ -1,0 +1,9 @@
+streamlit
+streamlit-aggrid==0.2.2-2
+click==8
+seaborn
+pandas
+numpy==1.26.4
+matplotlib
+sciviso
+levseq
