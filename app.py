@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from threading import Thread
 import plotly.express as px
-from levseq.seqfit import normalise_calculate_stats, process_files
+from levseq_vis.seqfit import normalise_calculate_stats, process_files
 
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
