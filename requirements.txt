@@ -2,7 +2,7 @@ streamlit
 streamlit-aggrid==0.2.2-2
 click==8
 seaborn
-pandas
+pandas==1.5.3
 numpy==1.26.4
 matplotlib
 sciviso
