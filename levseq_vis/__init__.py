@@ -18,7 +18,7 @@
 __title__ = 'levseq_viss'
 __description__ = 'Simple visualisation for the LevSeq visualisation https://github.com/fhalab/levseq/'
 __url__ = 'https://github.com/fhalab/levseq/'
-__version__ = '1.2.5'
+__version__ = '1.2.6'
 __author__ = 'Yueming Long, Emreay Gursoy, Ariane Mora, Francesca-Zhoufan Li'
 __author_email__ = 'ylong@caltech.edu'
 __license__ = 'GPL3'
