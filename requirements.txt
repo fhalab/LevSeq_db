@@ -6,4 +6,4 @@ pandas
 numpy==1.26.4
 matplotlib
 sciviso
-levseq-vis
+levseq-vis>=1.2.5
