@@ -276,16 +276,36 @@ def process_plate_files(
     - str
         The path of the output CSV file containing the processed data.
     """
-    
-    seq_columns = ["Plate", "Well", "amino-acid_substitutions", "nt_sequence", "aa_sequence", "Alignment Count", "Average mutation frequency"]
+
+    seq_columns = [
+        "Plate",
+        "Well",
+        "amino-acid_substitutions",
+        "nt_sequence",
+        "aa_sequence",
+        "Alignment Count",
+        "Average mutation frequency",
+    ]
 
     seq_df = seq_df[seq_columns].copy()
 
     seq_fit_column_order = (
-        ["Plate", "Well", "Parent_Name", "amino-acid_substitutions", "# Mutations", "Type"]
+        [
+            "Plate",
+            "Well",
+            "Parent_Name",
+            "amino-acid_substitutions",
+            "# Mutations",
+            "Type",
+        ]
         + products
-        + [p + "_fold" for p in products] + 
-        ["nt_sequence", "aa_sequence", "Alignment Count", "Average mutation frequency"]
+        + [p + "_fold" for p in products]
+        + [
+            "nt_sequence",
+            "aa_sequence",
+            "Alignment Count",
+            "Average mutation frequency",
+        ]
     )
 
     # Create an empty list to store the processed plate data
@@ -346,14 +366,30 @@ def process_plate_files(
         for m, v in processed_df[["amino-acid_substitutions", "aa_sequence"]].values
     ]
 
-    processed_df["Type"] = [v if v != "-" else "#DELETION#" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if str(v)[0] == "#" else "#VARIANT#" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if v != "#DELETION#" else "Deletion" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if v != "#VARIANT#" else "Variant" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if v != "#PARENT#" else "Parent" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if v != "#TRUNCATED#" else "Truncated" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if v != "#LOW#" else "Low" for v in processed_df["Type"].values]
-    processed_df["Type"] = [v if v != "#N.A.#" else "Empty" for v in processed_df["Type"].values]
+    processed_df["Type"] = [
+        v if v != "-" else "#DELETION#" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if str(v)[0] == "#" else "#VARIANT#" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if v != "#DELETION#" else "Deletion" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if v != "#VARIANT#" else "Variant" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if v != "#PARENT#" else "Parent" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if v != "#TRUNCATED#" else "Truncated" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if v != "#LOW#" else "Low" for v in processed_df["Type"].values
+    ]
+    processed_df["Type"] = [
+        v if v != "#N.A.#" else "Empty" for v in processed_df["Type"].values
+    ]
 
     # Return the processed DataFrame for downstream processes
     return processed_df[seq_fit_column_order].reset_index(drop=True).copy()
@@ -525,7 +561,14 @@ def prep_single_ssm(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     # slice out single site SSM and add in parentAA, site, and mutAA columns
-    single_ssm_df = df[df["num_sites"] <= 1].copy()
+    single_ssm_df = df[
+        (df["# Mutations"] <= 1) & (df["Type"].isin(["Parent", "Variant"]))
+    ].copy()
+
+    # Apply function to the column
+    single_ssm_df[["num_sites", "mut_dets"]] = single_ssm_df[
+        "amino-acid_substitutions"
+    ].apply(process_mutation)
 
     # Expand the single entry in Details for these rows into three columns
     single_ssm_df[["parent_aa", "site_numb", "mut_aa"]] = pd.DataFrame(
@@ -892,16 +935,6 @@ def gen_seqfitvis(
     products: list,
     # port=8000,
 ):
-
-    # ignore deletion meaning "Mutations" == "-"
-    df = df[df["amino-acid_substitutions"] != "-"].copy()
-    # count number of sites mutated and append mutation details
-    # df["num_sites"] = df['Mutations'].apply(lambda x: 0 if x == "#PARENT#" else len(x.split("_")))
-
-    # Apply function to the column
-    df[["num_sites", "mut_dets"]] = df["amino-acid_substitutions"].apply(
-        process_mutation
-    )
 
     parents = df["Parent_Name"].unique().tolist()
     single_ssm_df = prep_single_ssm(df)
