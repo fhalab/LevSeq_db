@@ -62,7 +62,7 @@ def normalise_calculate_stats(
     if normalise:
         for plate in set(processed_plate_df["Plate"].values):
             for value_column in value_columns:
-                sub_df = processed_plate_df[processed_plate_df["Plate"] == plate]
+                sub_df = processed_plate_df[processed_plate_df["Plate"] == plate].copy()
                 parent_values = sub_df[sub_df["amino-acid_substitutions"] == parent][
                     value_column
                 ].values
@@ -250,73 +250,6 @@ def work_up_lcms(
     return plate
 
 
-def process_files(results_df, plate_df, plate: str, product: list) -> pd.DataFrame:
-    """
-    Process and combine a single plate file
-
-    Args:
-    - product : str
-        The name of the product to be analyzed. ie pdt
-    - plate : str, ie 'HMC0225_HMC0226.csv'
-        The name of the input CSV file containing the plate data.
-
-    Returns:
-    - pd.DataFrame
-        A pandas DataFrame containing the processed data.
-    - str
-        The path of the output CSV file containing the processed data.
-    """
-    filtered_df = results_df[
-        ["Plate", "Well", "amino-acid_substitutions", "nt_sequence", "aa_sequence"]
-    ]
-    filtered_df = filtered_df[
-        (filtered_df["amino-acid_substitutions"] != "#N.A.#")
-    ].dropna()
-
-    # Create an empty list to store the processed plate data
-    processed_data = []
-
-    # Iterate over unique Plates and search for corresponding CSV files in the current directory
-    plate_object = work_up_lcms(plate_df, product)
-
-    # Extract attributes from plate_object as needed for downstream processes
-    if hasattr(plate_object, "df"):
-        # Assuming plate_object has a dataframe-like attribute 'df' that we can work with
-        plate_df = plate_object.df
-        plate_df["Plate"] = plate  # Add the plate identifier for reference
-
-        # Merge filtered_df with plate_df to retain amino-acid_substitutionss and nt_sequence columns
-        merged_df = pd.merge(plate_df, filtered_df, on=["Plate", "Well"], how="left")
-        columns_order = (
-            ["Plate", "Well", "Row", "Column", "amino-acid_substitutions"]
-            + product
-            + ["nt_sequence", "aa_sequence"]
-        )
-        merged_df = merged_df[columns_order]
-        processed_data.append(merged_df)
-
-    # Concatenate all dataframes if available
-    if processed_data:
-        processed_df = pd.concat(processed_data, ignore_index=True)
-    else:
-        processed_df = pd.DataFrame(
-            columns=["Plate", "Well", "Row", "Column", "amino-acid_substitutions"]
-            + product
-            + ["nt_sequence", "aa_sequence"]
-        )
-
-    # Ensure all entries in 'Mutations' are treated as strings
-    processed_df["amino-acid_substitutions"] = processed_df[
-        "amino-acid_substitutions"
-    ].astype(str)
-
-    # Remove any rows with empty values
-    processed_df = processed_df.dropna()
-
-    # Return the processed DataFrame for downstream processes
-    return processed_df
-
-
 # Function to process the plate files
 def process_plate_files(
     products: list, seq_df: pd.DataFrame, fit_df: pd.DataFrame, plate_names: list
@@ -343,22 +276,25 @@ def process_plate_files(
     - str
         The path of the output CSV file containing the processed data.
     """
+    
+    seq_columns = ["Plate", "Well", "amino-acid_substitutions", "nt_sequence", "aa_sequence", "Alignment Count", "Average mutation frequency"]
 
-    # Extract the required columns: Plate, Well, amino-acid_substitutionss, and nt_sequence,
-    # and remove rows with '#N.A.#' and NaN values
+    seq_df = seq_df[seq_columns].copy()
 
-    filtered_df = seq_df[
-        ["Plate", "Well", "amino-acid_substitutions", "nt_sequence", "aa_sequence"]
-    ]
-    filtered_df = filtered_df[
-        (filtered_df["amino-acid_substitutions"] != "#N.A.#")
-    ].dropna()
+    seq_fit_column_order = (
+        ["Plate", "Well", "Parent_Name", "amino-acid_substitutions", "# Mutations", "Type"]
+        + products
+        + [p + "_fold" for p in products] + 
+        ["nt_sequence", "aa_sequence", "Alignment Count", "Average mutation frequency"]
+    )
 
     # Create an empty list to store the processed plate data
     processed_data = []
 
     # Iterate over unique Plates and search for corresponding CSV files in the current directory
     for plate in plate_names:
+
+        plate_seq = seq_df[seq_df["Plate"] == plate].reset_index(drop=True).copy()
         # extract the fit data for the plate
         plate_fit = fit_df[fit_df["Plate"] == plate].reset_index(drop=True).copy()
 
@@ -368,44 +304,62 @@ def process_plate_files(
         # Extract attributes from plate_object as needed for downstream processes
         if hasattr(plate_object, "df"):
             # Assuming plate_object has a dataframe-like attribute 'df' that we can work with
-            plate_df = plate_object.df
-            plate_df["Plate"] = plate  # Add the plate identifier for reference
+            plate_fit_df = plate_object.df
+            plate_fit_df["Plate"] = plate  # Add the plate identifier for reference
 
             # Merge filtered_df with plate_df to retain amino-acid_substitutionss and nt_sequence columns
             merged_df = pd.merge(
-                plate_df, filtered_df, on=["Plate", "Well"], how="left"
+                plate_fit_df, plate_seq, on=["Plate", "Well"], how="outer"
             )
-            columns_order = (
-                ["Plate", "Well", "Row", "Column", "amino-acid_substitutions"]
-                + products
-                + ["nt_sequence", "aa_sequence"]
-            )
-            merged_df = merged_df[columns_order]
             processed_data.append(merged_df)
 
     # Concatenate all dataframes if available
     if processed_data:
         processed_df = pd.concat(processed_data, ignore_index=True)
     else:
-        processed_df = pd.DataFrame(
-            columns=["Plate", "Well", "Row", "Column", "amino-acid_substitutions"]
-            + products
-            + ["nt_sequence", "aa_sequence"]
-        )
+        return pd.DataFrame(seq_fit_column_order)
 
     # Ensure all entries in 'Mutations' are treated as strings
     processed_df["amino-acid_substitutions"] = processed_df[
         "amino-acid_substitutions"
     ].astype(str)
 
-    # Remove any rows with empty values
-    processed_df = processed_df.dropna()
+    # Match plate to parent
+    parent_dict, plate2parent = match_plate2parent(processed_df)
+    processed_df["Parent_Name"] = processed_df["Plate"].map(plate2parent)
+
+    # apply the norm function to all plates
+    processed_df = (
+        processed_df.groupby("Plate")
+        .apply(norm2parent, products=products)
+        .reset_index(drop=True)
+        .copy()
+    )
+
+    processed_df["# Mutations"] = [
+        len(str(m).split("_")) if m not in ["#N.A.#", "#PARENT#", "-", "#LOW#"] else 0
+        for m in processed_df["amino-acid_substitutions"].values
+    ]
+
+    processed_df["Type"] = [
+        m if "*" not in str(v) else "#TRUNCATED#"
+        for m, v in processed_df[["amino-acid_substitutions", "aa_sequence"]].values
+    ]
+
+    processed_df["Type"] = [v if v != "-" else "#DELETION#" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if str(v)[0] == "#" else "#VARIANT#" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if v != "#DELETION#" else "Deletion" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if v != "#VARIANT#" else "Variant" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if v != "#PARENT#" else "Parent" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if v != "#TRUNCATED#" else "Truncated" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if v != "#LOW#" else "Low" for v in processed_df["Type"].values]
+    processed_df["Type"] = [v if v != "#N.A.#" else "Empty" for v in processed_df["Type"].values]
 
     # Return the processed DataFrame for downstream processes
-    return processed_df
+    return processed_df[seq_fit_column_order].reset_index(drop=True).copy()
 
 
-def match_plate2parent(df: pd.DataFrame, parent_dict: Optional[Dict] = None) -> dict:
+def match_plate2parent(df: pd.DataFrame) -> dict:
 
     """
     Find plate names correpsonding to each parent sequence.
@@ -428,18 +382,16 @@ def match_plate2parent(df: pd.DataFrame, parent_dict: Optional[Dict] = None) -> 
         A dictionary containing the plate names for each parent sequence.
     """
 
-    if parent_dict is None:
+    # get the parent nt_sequence
+    parent_aas = (
+        df[df["amino-acid_substitutions"] == "#PARENT#"][
+            ["amino-acid_substitutions", "aa_sequence"]
+        ]
+        .drop_duplicates()["aa_sequence"]
+        .tolist()
+    )
 
-        # get the parent nt_sequence
-        parent_aas = (
-            df[df["amino-acid_substitutions"] == "#PARENT#"][
-                ["amino-acid_substitutions", "aa_sequence"]
-            ]
-            .drop_duplicates()["aa_sequence"]
-            .tolist()
-        )
-
-        parent_dict = {f"Parent-{i+1}": parent for i, parent in enumerate(parent_aas)}
+    parent_dict = {f"Parent-{i+1}": parent for i, parent in enumerate(parent_aas)}
 
     # get the plate names for each parent
     parent2plate = {
@@ -532,7 +484,7 @@ def norm2parent(plate_df: pd.DataFrame, products: list) -> pd.DataFrame:
         )
 
         # normalize the whole plate to the mean of the filtered parent
-        plate_df[product + "_norm"] = (
+        plate_df[product + "_fold"] = (
             plate_df[product] / filtered_parents[product].mean()
         )
 
@@ -936,27 +888,11 @@ def agg_single_ssm_exp_avg(
 
 
 def gen_seqfitvis(
-    seqfit_path: str,
+    df: pd.DataFrame,
     products: list,
-    output_dir: str = "",
-    protein_chain: str = "A",
-    chai_meta_data={
-        "smiles": "",
-        "smiles_name": "",
-        "cofactor_smiles": "",
-        "cofactor_name": "",
-        "joinsubcofactor": True,
-        "torch_device": "cuda",
-        "ifrerun": False,
-    },
     # port=8000,
 ):
 
-    # normalized per plate to parent
-    if isinstance(seqfit_path, str):
-        df = pd.read_csv(seqfit_path)
-    else:
-        df = seqfit_path
     # ignore deletion meaning "Mutations" == "-"
     df = df[df["amino-acid_substitutions"] != "-"].copy()
     # count number of sites mutated and append mutation details
@@ -967,24 +903,13 @@ def gen_seqfitvis(
         process_mutation
     )
 
-    # apply the norm function to all plates
-    df = (
-        df.groupby("Plate")
-        .apply(norm2parent, products=products)
-        .reset_index(drop=True)
-        .copy()
-    )
-    norm_products = [f"{product}_norm" for product in products]
-
-    # add a new column called parent name to the df
-    # using the dict out put from match_plate2parent
-    # that matches the plate to the parent
-    parent_dict, plate2parent = match_plate2parent(df, parent_dict=None)
-    df["Parent_Name"] = df["Plate"].map(plate2parent)
-
     parents = df["Parent_Name"].unique().tolist()
     single_ssm_df = prep_single_ssm(df)
     sites_dict = get_parent2sitedict(single_ssm_df)
+
+    print(single_ssm_df)
+
+    print(sites_dict)
 
     def get_subplots(
         parent,
@@ -1014,7 +939,7 @@ def gen_seqfitvis(
                 site_df["parent_aa_loc"].unique()[0] if not site_df.empty else "Unknown"
             )
 
-            return agg_mut_plot(site_df, site_info, parent=parent, ys=norm_products)
+            return agg_mut_plot(site_df, site_info, parent=parent, ys=products)
 
         site_plot = pn.Column(pn.bind(update_site_plot, site=site_dropdown))
 
@@ -1022,7 +947,7 @@ def gen_seqfitvis(
             agg_single_ssm_exp_avg(
                 single_ssm_df=single_ssm_df,
                 parent_name=parent,
-                ys=norm_products,
+                ys=products,
             ),
             site_dropdown,
             site_plot,
@@ -1036,14 +961,9 @@ def gen_seqfitvis(
 
     # Panel layout
     dashboard = pn.Column(
-        agg_parent_plot(df, ys=norm_products),
+        agg_parent_plot(df, ys=products),
         parent_dropdown,
         pn.Column(pn.bind(get_subplots, parent=parent_dropdown)),
     )
 
-    if not output_dir:
-        output_dir = os.path.dirname(seqfit_path)
-    else:
-        output_dir = checkNgen_folder(os.path.normpath(output_dir))
-
-    return dashboard, output_dir
+    return dashboard

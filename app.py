@@ -5,7 +5,7 @@ import plotly.express as px
 from levseq_vis.seqfit import (
     normalise_calculate_stats,
     process_plate_files,
-    gen_seqfitvis,
+    gen_seqfitvis
 )
 
 from streamlit.runtime.scriptrunner import add_script_run_ctx
@@ -100,30 +100,6 @@ with c2:
 padd3, c0, padd4 = st.columns([1, 6, 1])
 
 
-def format_dataframes(seq_variant, df):
-    seq_variant["id"] = [f"{p}_{w}" for p, w in seq_variant[["Plate", "Well"]].values]
-    df["id"] = [f"{p}_{w}" for p, w in df[["Plate", "Well"]].values]
-    df.set_index("id", inplace=True)
-    seq_variant.set_index("id", inplace=True)
-
-    df = df.join(seq_variant, rsuffix="_processed_plate_df", how="outer")
-    df["Type"] = [
-        m if "*" not in str(v) else "#TRUNCATED#"
-        for m, v in df[["amino-acid_substitutions", "aa_sequence"]].values
-    ]
-
-    df["Type"] = [v if v != "-" else "#DELETION#" for v in df["Type"].values]
-    df["Type"] = [v if str(v)[0] == "#" else "#VARIANT#" for v in df["Type"].values]
-    df["Type"] = [v if v != "#DELETION#" else "Deletion" for v in df["Type"].values]
-    df["Type"] = [v if v != "#VARIANT#" else "Variant" for v in df["Type"].values]
-    df["Type"] = [v if v != "#PARENT#" else "Parent" for v in df["Type"].values]
-    df["Type"] = [v if v != "#TRUNCATED#" else "Truncated" for v in df["Type"].values]
-    df["Type"] = [v if v != "#LOW#" else "Low" for v in df["Type"].values]
-    df["Type"] = [v if v != "#N.A.#" else "Empty" for v in df["Type"].values]
-
-    return df
-
-
 def make_alignment_plot(df):
     # Streamlit app
     st.title("Alignment Count Plot")
@@ -193,6 +169,12 @@ def make_scatter_plot(df):
         "Variant": "#3A578F",
     }
 
+    SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
+
+    parents_list = list(df["Parent_Name"].unique())
+
+    shape_mapping = {p: s for p, s in zip(parents_list, SHPAE_LIST[:len(parents_list)])}
+
     # Create the Plotly scatter plot
     fig = px.scatter(
         df,
@@ -200,11 +182,13 @@ def make_scatter_plot(df):
         y=prod_2,
         color="Type",
         color_discrete_map=color_mapping,
+        symbol="Parent_Name",
+        symbol_map=shape_mapping,
         size="size",
         category_orders={
             "Type": ["Empty", "Low", "Deletion", "Truncated", "Parent", "Variant"]
         },
-        hover_data=["Type", "amino-acid_substitutions", prod_1, prod_2, "size"],
+        hover_data=["Type", "Parent_Name", "amino-acid_substitutions", "# Mutations", prod_1, prod_2],
         title=f"{prod_1} vs {prod_2}",
     )
 
@@ -225,19 +209,14 @@ def seqfit_runner():
     if fit_df is None or seq_variant is None:
         st.error("Please upload both Sequence and Fitness files.")
         return
-
+    
     # Process variants
     df = process_plate_files(
         products=products, fit_df=fit_df, seq_df=seq_variant, plate_names=plate_names
     )
 
-    df["# Mutations"] = [
-        len(str(m).split("_")) if m not in ["#N.A.#", "#PARENT#", "-", "#LOW#"] else 0
-        for m in df["amino-acid_substitutions"].values
-    ]
-
     # ------------------------ Display paired seq function data as a table
-    st.title("Joined sequence function data")
+    st.title("Joined sequence function data (fold change wrt parent per plate)")
     st.dataframe(df)  # Interactive table with scrollbars
 
     # ------------------------ Stats
@@ -265,11 +244,10 @@ def seqfit_runner():
     st.dataframe(stats_df)  # Interactive table with scrollbars
 
     # -------------------------- Make visualisations
-    df = format_dataframes(df, seq_variant)
 
     make_alignment_plot(df)
     make_scatter_plot(df)
-    # gen_seqfitvis(df, products)
+    # st.bokeh_chart(gen_seqfitvis(df, products))
 
     st.subheader("Done LevSeq!")
 
