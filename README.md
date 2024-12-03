@@ -9,6 +9,7 @@ Once you have your figures you can download the csv results by hovering on any o
 ## Upload with data
 
 Using the `visualization_partial.csv` file as the variant file and the `300-1` in the `ep1` folder.
+Support multiple fitness fites so long as they are included in the sequence file.
 
 ### Tables for download
 We join the data based on user selected columns (in this case `cis` and `trans`) from a LC-MS run.
