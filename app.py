@@ -3,6 +3,7 @@ import re
 import numpy as np
 import pandas as pd
 from threading import Thread
+from plotly.subplots import make_subplots
 import plotly.express as px
 import plotly.graph_objects as go
 from levseq_vis.seqfit import (
@@ -11,6 +12,9 @@ from levseq_vis.seqfit import (
     prep_aa_order,
     prep_single_ssm,
     get_parent2sitedict,
+    get_single_ssm_site_df,
+    get_x_label,
+    get_y_label,
 )
 
 from streamlit.runtime.scriptrunner import add_script_run_ctx
@@ -221,15 +225,44 @@ def make_scatter_plot(df, parents_list):
 
 
 def plot_bar_point(
-    df, x, y, x_label=None, y_label=None, title=None, if_max=False, bar_color="blue"
+    df,
+    x,
+    y,
+    x_label=None,
+    y_label=None,
+    title=None,
+    if_max=False,
+    bar_color=None,
+    colorscale=None,
+    showlegend=True,
 ):
     # Group data by `x` and calculate mean for bars
     bar_data = df.groupby(x).mean()[y].reset_index()
 
+    if bar_color:
+        bar_kwargs = dict(marker_color=bar_color)
+    elif colorscale:
+        bar_kwargs = dict(
+            marker=dict(
+                color=bar_data[y],  # Color based on y-values
+                colorscale=colorscale,  # Use the specified colorscale
+                showscale=True,  # Show color scale legend
+                colorbar=dict(
+                    title=dict(
+                        text=get_y_label(y),
+                        side="right",  # Move title to the left of the color bar
+                        # standoff=15,  # Adjust the spacing
+                    ),
+                    thickness=15,  # Set the length of the color bar
+                    outlinewidth=0,  # Remove the border of the color bar
+                ),  # Add title to the color scale
+            )
+        )
+    else:
+        bar_kwargs = dict()
+
     # Create bar plot
-    bar_trace = go.Bar(
-        x=bar_data[x], y=bar_data[y], name="Average", marker_color=bar_color
-    )
+    bar_trace = go.Bar(x=bar_data[x], y=bar_data[y], name="Average", **bar_kwargs)
 
     # Create scatter plot
     scatter_trace = go.Scatter(
@@ -259,28 +292,14 @@ def plot_bar_point(
     fig = go.Figure(data=traces)
     fig.update_layout(
         title=title or f"{x} vs {y}",
-        xaxis_title=x_label or x,
-        yaxis_title=y_label or y,
+        xaxis_title=x_label or get_x_label(x),
+        yaxis_title=y_label or get_y_label(y),
+        showlegend=showlegend,
         # width=800,
         # height=500,
     )
 
     return fig
-
-
-# def get_parent_plot(df, y="pdt_fold"):
-#     parent_summary = df.groupby("Parent_Name")[y].max().reset_index()
-
-#     fig = px.bar(
-#         parent_summary,
-#         x="Parent_Name",
-#         y=y,
-#         title="Max Value by Parent",
-#         labels={"Parent_Name": "Parent", y: "Max Value"},
-#         color="#97CA43",
-#     )
-#     fig.update_layout(width=800, height=500)
-#     return fig
 
 
 def agg_parent_plot(df, ys=["pdt_fold"]):
@@ -291,7 +310,7 @@ def agg_parent_plot(df, ys=["pdt_fold"]):
             x="Parent_Name",
             y=y,
             bar_color="#97CA43",
-            title=f"{y} across parents",
+            title=f"{get_y_label(y)} across parents",
             if_max=True,
         )
         for y in ys
@@ -306,17 +325,47 @@ def agg_parent_plot(df, ys=["pdt_fold"]):
         st.plotly_chart(plot)
 
 
-# def agg_mut_plot(site_df, site_info, parent, ys):
-#     for y in ys:
-#         if y in site_df.columns:
-#             plot = plot_bar_point(
-#                 site_df,
-#                 x="mut_aa",
-#                 y=y,
-#                 title=f"{site_info} for {parent}",
-#                 if_max=False
-#             )
-#             st.plotly_chart(plot)
+def agg_mut_plot(sites_dict, single_ssm_df, ys):
+    """
+    Create individual plots for each parent and their respective sites.
+
+    Args:
+    - sites_dict (dict): A dictionary where keys are parents and values are lists of sites.
+    - single_ssm_df (pd.DataFrame): DataFrame containing the single site mutation data.
+    - ys (list): List of columns to plot.
+    """
+    for parent, sites in sites_dict.items():
+        st.subheader(f"Parent: {parent}")  # Section title for each parent
+
+        for site in sites:
+            # Preprocess the site-specific data
+            site_df = prep_aa_order(
+                get_single_ssm_site_df(single_ssm_df, parent=parent, site=site)
+            )
+
+            if site_df.empty:
+                st.warning(f"No data available for Parent: {parent}, Site: {site}")
+                continue  # Skip if there's no data for the site
+
+            site_info = (
+                site_df["parent_aa_loc"].unique()[0] if not site_df.empty else "Unknown"
+            )
+
+            st.markdown(f"**Site: {site_info}**")  # Add site-specific label
+
+            # Generate plots for each `y` value
+            for y in ys:
+                if y in site_df.columns:
+                    fig = plot_bar_point(
+                        site_df,
+                        x="mut_aa",
+                        y=y,
+                        title=f"Parent: {parent}, Site: {site_info}, Metric: {get_y_label(y)}",
+                        if_max=False,
+                        colorscale="RdBu_r",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig)
 
 
 def plot_single_ssm_avg(single_ssm_df, ys=["pdt_fold"]):
@@ -362,53 +411,19 @@ def plot_single_ssm_avg(single_ssm_df, ys=["pdt_fold"]):
                     # height=600,
                     # width=width,
                 )
+                fig.update_coloraxes(
+                    colorbar_title=get_y_label(y),
+                    colorbar=dict(
+                        # text=get_y_label(y),
+                        title_side="right",  # Move title to the left of the color bar
+                        # len=0.8,  # Set the length of the color bar
+                    ),
+                )
                 all_plots.append(fig)
 
     # Render all plots in Streamlit
     for fig in all_plots:
         st.plotly_chart(fig)
-
-
-# def plot_single_ssm_avg(single_ssm_df, parent_name, y="pdt_fold", width=600):
-#     # Filter data for the selected parent
-#     sliced_df = prep_aa_order(
-#         single_ssm_df[single_ssm_df["Parent_Name"] == parent_name].copy()
-#     )
-
-#     if sliced_df.empty:
-#         st.warning("No data available for the selected parent.")
-#         return None
-
-#     # Prepare heatmap data
-#     heatmap_data = sliced_df.pivot_table(
-#         index="mut_aa",
-#         columns="parent_aa_loc",
-#         values=y,
-#         aggfunc="mean",
-#     ).T
-
-#     # Create heatmap using Plotly
-#     fig = px.imshow(
-#         heatmap_data,
-#         labels={"x": "Position", "y": "Mutation", "color": y},
-#         title=f"Average Single Site Substitution for {parent_name}",
-#         height=600,
-#         width=width,
-#         color_continuous_scale="RdBu",
-#     )
-#     fig.update_layout(xaxis=dict(tickangle=45), yaxis=dict(autorange="reversed"))
-#     st.plotly_chart(fig)
-
-
-# def agg_single_ssm_exp_avg(single_ssm_df, ys=["pdt_fold"]):
-#     # Create a dropdown for parent selection
-#     parents = single_ssm_df["Parent_Name"].unique()
-#     parent_name = st.selectbox("Select Parent", options=parents)
-
-#     # Generate plots for the selected parent
-#     for y in ys:
-#         if y in single_ssm_df.columns:
-#             plot_single_ssm_avg(single_ssm_df=single_ssm_df, parent_name=parent_name, y=y)
 
 
 def seqfit_runner():
@@ -470,8 +485,11 @@ def seqfit_runner():
 
     # # Generate single SSM plots
     st.header("Single SSM Heatmap")
-    sites_dict = get_parent2sitedict(single_ssm_df)
-    # agg_mut_plot(site_df, site_info="Site 1", parent="Parent 1", ys=["pdt_fold"])
+    agg_mut_plot(
+        sites_dict=get_parent2sitedict(single_ssm_df),
+        single_ssm_df=single_ssm_df,
+        ys=["pdt_fold"],
+    )
 
     st.subheader("Done LevSeq!")
 
