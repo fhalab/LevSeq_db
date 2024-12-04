@@ -1,9 +1,7 @@
 import streamlit as st
 import re
-import numpy as np
 import pandas as pd
 from threading import Thread
-from plotly.subplots import make_subplots
 import plotly.express as px
 import plotly.graph_objects as go
 from levseq_vis.seqfit import (
@@ -406,7 +404,7 @@ def plot_single_ssm_avg(single_ssm_df, ys=["pdt_fold"]):
                 fig = px.imshow(
                     heatmap_data.T,
                     color_continuous_scale="RdBu_r",
-                    labels={"x": "Position", "y": "Mutation", "color": y},
+                    labels={"x": "Amino acid substitutions", "y": "Position", "color": y},
                     title=f"Average Single Site Substitution for {parent_name}",
                     # height=600,
                     # width=width,
@@ -414,9 +412,7 @@ def plot_single_ssm_avg(single_ssm_df, ys=["pdt_fold"]):
                 fig.update_coloraxes(
                     colorbar_title=get_y_label(y),
                     colorbar=dict(
-                        # text=get_y_label(y),
                         title_side="right",  # Move title to the left of the color bar
-                        # len=0.8,  # Set the length of the color bar
                     ),
                 )
                 all_plots.append(fig)

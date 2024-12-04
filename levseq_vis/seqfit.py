@@ -2,12 +2,9 @@
 A script for visualzing the sequnece-fitness relationship
 """
 
-from typing import Optional, Dict, Union, List
-
 import re
 import os
 
-import warnings
 from copy import deepcopy
 
 # Get them w.r.t to a mutation
@@ -16,8 +13,6 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
-import panel as pn
-import holoviews as hv
 import ninetysix as ns
 
 
