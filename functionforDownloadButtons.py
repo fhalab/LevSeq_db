@@ -1,10 +1,12 @@
 import streamlit as st
-import pickle
+import math
 import pandas as pd
 import json
 import base64
 import uuid
 import re
+import jupytext
+from bokeh.models import Div
 
 import importlib.util
 
@@ -139,8 +141,12 @@ def download_button(object_to_download, download_filename, button_text):
 
     dl_link = (
         custom_css
+        + f'<a download="{download_filename}" id="{button_id}" href="data:image/svg+xml;base64,{b64}">{button_text}</a><br><br>'
+        if download_filename.endswith(".svg")
+        else custom_css
         + f'<a download="{download_filename}" id="{button_id}" href="data:file/txt;base64,{b64}">{button_text}</a><br><br>'
     )
+
     # dl_link = f'<a download="{download_filename}" id="{button_id}" href="data:file/txt;base64,{b64}"><input type="button" kind="primary" value="{button_text}"></a><br></br>'
 
     st.markdown(dl_link, unsafe_allow_html=True)

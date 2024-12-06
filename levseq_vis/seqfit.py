@@ -721,10 +721,11 @@ def get_y_label(y: str):
     Function to return the y-axis label based on the input string.
     """
     clean_y = ""
-    if "pdt" in y.lower():
-        clean_y = y.replace("pdt", "Product")
-    elif "area" in y.lower():
-        clean_y = y.replace("area", "Yield")
+
+    # if "pdt" in y.casefold():  # Case-insensitive check
+    #     clean_y = y.replace("pdt", "Product", case=False)
+    if "area" in y.casefold():  # Case-insensitive check
+        clean_y = y.replace("area", "Yield", case=False)
     elif y == "fitness_ee2/(ee1+ee2)":
         clean_y = "ee2/(ee1+ee2)"
     elif y == "fitness_ee1/(ee1+ee2)":
@@ -733,8 +734,9 @@ def get_y_label(y: str):
         clean_y = y
 
     # normalize the y label
-    if "norm" in y.lower():
-        clean_y = f"Normalized {clean_y.lower()}"
-    if "fold" in y.lower():
-        clean_y = f"{clean_y} fold change wrt parent"
+    if "_norm" in y.lower() or "_fold" in y.lower():
+        clean_y = f"Normalized {clean_y.replace('_fold', '').replace('_norm', '').lower()}"
+
+    # if "fold" in y.lower():
+    #     clean_y = f"{clean_y}"
     return clean_y

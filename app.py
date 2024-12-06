@@ -23,6 +23,13 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 # """
 
 
+# Set the config for the plotly charts
+config = {
+    "toImageButtonOptions": {
+        "format": "svg",  # Set the download format to SVG
+    }
+}
+
 def _max_width_():
     max_width_str = f"max-width: 1800px;"
     st.markdown(
@@ -160,7 +167,7 @@ def make_alignment_plot(df):
     )
 
     # Display the plot in Streamlit
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, config=config)
 
 
 def make_scatter_plot(df, parents_list):
@@ -236,7 +243,7 @@ def make_scatter_plot(df, parents_list):
     fig.update_layout(
         legend=dict(title="Type", x=1.05, y=1, xanchor="left", yanchor="top")
     )
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, config=config)
 
 
 def plot_bar_point(
@@ -273,23 +280,6 @@ def plot_bar_point(
             else {"color": "white", "width": 0}
             for val in bar_data[x]
         ]
-        # cmin = min(bar_data[y])
-        # cmax = max(bar_data[y])
-
-        # if "fold" in y:
-
-        #     # Calculate relative position of the midpoint
-        #     c_mid = 0  # Desired midpoint (example)
-
-        #     # Calculate relative position of c_mid between cmin and cmax
-        #     midpoint = (c_mid - cmin) / (cmax - cmin)
-
-        #     # Create a custom colorscale
-        #     colorscale = [
-        #         [0, "blue"],       # Start of the color scale
-        #         [midpoint, "gray"],  # Midpoint
-        #         [1, "red"],        # End of the color scale
-        #     ]
 
         bar_kwargs = dict(
             marker=dict(
@@ -300,8 +290,6 @@ def plot_bar_point(
                     width=[line["width"] for line in bar_lines],
                 ),  # Add outlines for highlighted bar
                 showscale=True,  # Show color scale legend
-                # cmin=cmin,  # Minimum value for the color scale
-                # cmax=cmax,  # Maximum value for the color scale
                 colorbar=dict(
                     title=dict(
                         text=get_y_label(y),
@@ -347,8 +335,6 @@ def plot_bar_point(
     fig = go.Figure(data=traces)
     fig.update_layout(
         title=title or f"{x} vs {y}",
-        # xaxis_title=x_label or get_x_label(x),
-        # yaxis_title=y_label or get_y_label(y),
         xaxis=dict(
             title=x_label or get_x_label(x),
             showline=True,
@@ -362,8 +348,6 @@ def plot_bar_point(
             linecolor="gray",  # Color of the axis line
         ),
         showlegend=showlegend,
-        # width=800,
-        # height=500,
     )
 
     return fig
@@ -389,7 +373,7 @@ def agg_parent_plot(df, ys):
 
     # Display plots in Streamlit
     for plot in plots:
-        st.plotly_chart(plot)
+        st.plotly_chart(plot, config=config)
 
 
 def agg_mut_plot(sites_dict, single_ssm_df, ys):
@@ -434,7 +418,7 @@ def agg_mut_plot(sites_dict, single_ssm_df, ys):
                         colorscale="RdBu_r",
                         showlegend=False,
                     )
-                    st.plotly_chart(fig)
+                    st.plotly_chart(fig, config=config)
 
 
 def plot_single_ssm_avg(single_ssm_df, ys):
@@ -500,7 +484,7 @@ def plot_single_ssm_avg(single_ssm_df, ys):
 
     # Render all plots in Streamlit
     for fig in all_plots:
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, config=config)
 
 
 def seqfit_runner():
