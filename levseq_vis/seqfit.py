@@ -189,17 +189,16 @@ def work_up_lcms(
     plate: ns.Plate object (DataFrame-like)
     """
 
-
     if isinstance(file, str):
         # Read the first row of the file to inspect
         first_row = pd.read_csv(file, nrows=2, header=None)
-        
+
         # Check if the first entry contains "Compound name (signal)"
         if "Compound name (signal)" in str(first_row.iloc[0, 0]):
             header_row = 1  # The actual header is on the second row
         else:
             header_row = 0  # The first row is the actual header
-        
+
         # Load the CSV with the determined header row
         df = pd.read_csv(file, header=header_row)
     else:
@@ -735,7 +734,7 @@ def get_y_label(y: str):
 
     # normalize the y label
     if "_norm" in y.lower() or "_fold" in y.lower():
-        clean_y = f"Normalized {clean_y.replace('_fold', '').replace('_norm', '').lower()}"
+        clean_y = f"Normalized {clean_y.replace('_fold', '').replace('_norm', '')}"
 
     # if "fold" in y.lower():
     #     clean_y = f"{clean_y}"
