@@ -78,15 +78,17 @@ with c2:
                 if "Compound name (signal)" in str(df.iloc[0, 0]):
                     # Use the second row as the header
                     df.columns = df.iloc[1]  # Set the second row as the header
-                    df = df[2:].reset_index(drop=True).copy()  # Drop the first two rows (metadata and headers)
+                    df = (
+                        df[2:].reset_index(drop=True).copy()
+                    )  # Drop the first two rows (metadata and headers)
                 else:
                     # Use the first row as the header
                     df.columns = df.iloc[0]  # Set the first row as the header
-                    df = df[1:].reset_index(drop=True).copy()  # Drop the first row (headers)
+                    df = (
+                        df[1:].reset_index(drop=True).copy()
+                    )  # Drop the first row (headers)
 
-                plate_df = df.dropna(
-                    subset=["Compound Name"]
-                )
+                plate_df = df.dropna(subset=["Compound Name"])
                 plate_name = str(fitness.name).split(".")[0]
 
                 # add a column for the plate name
@@ -247,20 +249,59 @@ def plot_bar_point(
     if_max=False,
     bar_color=None,
     colorscale=None,
+    highlight_label=None,  # New: Value to highlight
+    highlight_color="white",  # New: Color for the highlighted bar
     showlegend=True,
-):  
-    
+):
+
     # Group data by `x` and calculate mean for bars
     bar_data = df.groupby(x).mean()[y].reset_index()
 
     if bar_color:
         bar_kwargs = dict(marker_color=bar_color)
     elif colorscale:
+        # Define bar colors conditionally
+        bar_colors = [
+            highlight_color if label == highlight_label else value
+            for label, value in zip(bar_data[x], bar_data[y])
+        ]
+
+        # Define bar line styles conditionally
+        bar_lines = [
+            {"color": "black", "width": 2}
+            if val == highlight_label
+            else {"color": "white", "width": 0}
+            for val in bar_data[x]
+        ]
+        # cmin = min(bar_data[y])
+        # cmax = max(bar_data[y])
+
+        # if "fold" in y:
+
+        #     # Calculate relative position of the midpoint
+        #     c_mid = 0  # Desired midpoint (example)
+
+        #     # Calculate relative position of c_mid between cmin and cmax
+        #     midpoint = (c_mid - cmin) / (cmax - cmin)
+
+        #     # Create a custom colorscale
+        #     colorscale = [
+        #         [0, "blue"],       # Start of the color scale
+        #         [midpoint, "gray"],  # Midpoint
+        #         [1, "red"],        # End of the color scale
+        #     ]
+
         bar_kwargs = dict(
             marker=dict(
-                color=bar_data[y],  # Color based on y-values
+                color=bar_colors,  # Color based on y-values
                 colorscale=colorscale,  # Use the specified colorscale
+                line=dict(
+                    color=[line["color"] for line in bar_lines],
+                    width=[line["width"] for line in bar_lines],
+                ),  # Add outlines for highlighted bar
                 showscale=True,  # Show color scale legend
+                # cmin=cmin,  # Minimum value for the color scale
+                # cmax=cmax,  # Maximum value for the color scale
                 colorbar=dict(
                     title=dict(
                         text=get_y_label(y),
@@ -306,8 +347,20 @@ def plot_bar_point(
     fig = go.Figure(data=traces)
     fig.update_layout(
         title=title or f"{x} vs {y}",
-        xaxis_title=x_label or get_x_label(x),
-        yaxis_title=y_label or get_y_label(y),
+        # xaxis_title=x_label or get_x_label(x),
+        # yaxis_title=y_label or get_y_label(y),
+        xaxis=dict(
+            title=x_label or get_x_label(x),
+            showline=True,
+            linewidth=1,
+            linecolor="gray",
+        ),
+        yaxis=dict(
+            title=y_label or get_y_label(y),
+            showline=True,
+            linewidth=1,
+            linecolor="gray",  # Color of the axis line
+        ),
         showlegend=showlegend,
         # width=800,
         # height=500,
@@ -376,6 +429,8 @@ def agg_mut_plot(sites_dict, single_ssm_df, ys):
                         y=y,
                         title=f"Parent: {parent}, Site: {site_info}, Metric: {get_y_label(y)}",
                         if_max=False,
+                        highlight_label=site_info[0],  # New: Value to highlight
+                        highlight_color="white",  # New: Color for the highlighted bar
                         colorscale="RdBu_r",
                         showlegend=False,
                     )
@@ -420,16 +475,26 @@ def plot_single_ssm_avg(single_ssm_df, ys):
                 fig = px.imshow(
                     heatmap_data.T,
                     color_continuous_scale="RdBu_r",
-                    labels={"x": "Amino acid substitutions", "y": "Position", "color": y},
+                    labels={
+                        "x": "Amino acid substitutions",
+                        "y": "Position",
+                        "color": y,
+                    },
                     title=f"Average Single Site Substitution for {parent_name}",
-                    # height=600,
-                    # width=width,
                 )
+
+                # Update colorbar settings
                 fig.update_coloraxes(
                     colorbar_title=get_y_label(y),
                     colorbar=dict(
                         title_side="right",  # Move title to the left of the color bar
                     ),
+                )
+
+                # Remove horizontal gridlines
+                fig.update_layout(
+                    xaxis=dict(showgrid=False),  # Disable gridlines for x-axis
+                    yaxis=dict(showgrid=False),  # Disable gridlines for y-axis
                 )
                 all_plots.append(fig)
 
