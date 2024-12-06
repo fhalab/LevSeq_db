@@ -71,7 +71,20 @@ with c2:
     if fitness_files:
         for fitness in fitness_files:
             try:
-                plate_df = pd.read_csv(fitness, header=1).dropna(
+                # Read the file into a DataFrame without assuming any header
+                df = pd.read_csv(fitness, header=None)
+
+                # Check if the first entry contains "Compound name (signal)"
+                if "Compound name (signal)" in str(df.iloc[0, 0]):
+                    # Use the second row as the header
+                    df.columns = df.iloc[1]  # Set the second row as the header
+                    df = df[2:].reset_index(drop=True).copy()  # Drop the first two rows (metadata and headers)
+                else:
+                    # Use the first row as the header
+                    df.columns = df.iloc[0]  # Set the first row as the header
+                    df = df[1:].reset_index(drop=True).copy()  # Drop the first row (headers)
+
+                plate_df = df.dropna(
                     subset=["Compound Name"]
                 )
                 plate_name = str(fitness.name).split(".")[0]
@@ -203,6 +216,8 @@ def make_scatter_plot(df, parents_list):
         hover_data=[
             "Type",
             "Parent_Name",
+            "Plate",
+            "Well",
             "amino-acid_substitutions",
             "# Mutations",
             prod_1,
@@ -233,7 +248,8 @@ def plot_bar_point(
     bar_color=None,
     colorscale=None,
     showlegend=True,
-):
+):  
+    
     # Group data by `x` and calculate mean for bars
     bar_data = df.groupby(x).mean()[y].reset_index()
 
@@ -300,7 +316,7 @@ def plot_bar_point(
     return fig
 
 
-def agg_parent_plot(df, ys=["pdt_fold"]):
+def agg_parent_plot(df, ys):
     # Create plots for each metric
     plots = [
         plot_bar_point(
@@ -366,7 +382,7 @@ def agg_mut_plot(sites_dict, single_ssm_df, ys):
                     st.plotly_chart(fig)
 
 
-def plot_single_ssm_avg(single_ssm_df, ys=["pdt_fold"]):
+def plot_single_ssm_avg(single_ssm_df, ys):
     # Preprocess data for each parent
     parents = single_ssm_df["Parent_Name"].unique()
 
@@ -484,7 +500,7 @@ def seqfit_runner():
     agg_mut_plot(
         sites_dict=get_parent2sitedict(single_ssm_df),
         single_ssm_df=single_ssm_df,
-        ys=["pdt_fold"],
+        ys=fold_products,
     )
 
     st.subheader("Done LevSeq!")

@@ -188,9 +188,20 @@ def work_up_lcms(
     --------
     plate: ns.Plate object (DataFrame-like)
     """
+
+
     if isinstance(file, str):
-        # Read in the data
-        df = pd.read_csv(file, header=[1])
+        # Read the first row of the file to inspect
+        first_row = pd.read_csv(file, nrows=2, header=None)
+        
+        # Check if the first entry contains "Compound name (signal)"
+        if "Compound name (signal)" in str(first_row.iloc[0, 0]):
+            header_row = 1  # The actual header is on the second row
+        else:
+            header_row = 0  # The first row is the actual header
+        
+        # Load the CSV with the determined header row
+        df = pd.read_csv(file, header=header_row)
     else:
         # Change to handling both
         df = file
@@ -356,8 +367,9 @@ def process_plate_files(
         for m in processed_df["amino-acid_substitutions"].values
     ]
 
+    # do not count the stop codon at the very end
     processed_df["Type"] = [
-        m if "*" not in str(v) else "#TRUNCATED#"
+        m if "*" not in str(v)[:-1] else "#TRUNCATED#"
         for m, v in processed_df[["amino-acid_substitutions", "aa_sequence"]].values
     ]
 
@@ -710,9 +722,9 @@ def get_y_label(y: str):
     """
     clean_y = ""
     if "pdt" in y.lower():
-        clean_y = "Product"
+        clean_y = y.replace("pdt", "Product")
     elif "area" in y.lower():
-        clean_y = "Yield"
+        clean_y = y.replace("area", "Yield")
     elif y == "fitness_ee2/(ee1+ee2)":
         clean_y = "ee2/(ee1+ee2)"
     elif y == "fitness_ee1/(ee1+ee2)":
