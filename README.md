@@ -27,6 +27,19 @@ the alignment count.
 ![align](images/cis_trans.png)
 ![align](images/single_feature.png)
 
+
+### Bar plot for all variants for each parent
+This shows the fitness values of all variants for each given parent.
+![align](images/avg_parent.png)
+
+### Heatmap for single amino acid substitutions
+This shows the fitness values of all variants averaged across each single amino acid subsitution for each given parent. Most useful for SSM data.
+![align](images/avg_parent_sub.png)
+
+### Bar plot for each targed site amino acid substitution
+This shows the fitness values of all variants averaged across each single amino acid subsitution for each given site of a given parent. Most useful for SSM data.
+![align](images/ssm_per_site.png)
+
 ## Please provide feedback
 Leave a feature request in the issues or on [LevSeq](https://github.com/fhalab/LevSeq) . 
 

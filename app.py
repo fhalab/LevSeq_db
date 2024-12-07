@@ -1,11 +1,18 @@
 import streamlit as st
+import re
 import pandas as pd
 from threading import Thread
 import plotly.express as px
+import plotly.graph_objects as go
 from levseq_vis.seqfit import (
     normalise_calculate_stats,
     process_plate_files,
-    gen_seqfitvis,
+    prep_aa_order,
+    prep_single_ssm,
+    get_parent2sitedict,
+    get_single_ssm_site_df,
+    get_x_label,
+    get_y_label,
 )
 
 from streamlit.runtime.scriptrunner import add_script_run_ctx
@@ -15,6 +22,13 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 # https://share.streamlit.io/streamlit/example-app-csv-wrangler/
 # """
 
+
+# Set the config for the plotly charts
+config = {
+    "toImageButtonOptions": {
+        "format": "svg",  # Set the download format to SVG
+    }
+}
 
 def _max_width_():
     max_width_str = f"max-width: 1800px;"
@@ -64,9 +78,24 @@ with c2:
     if fitness_files:
         for fitness in fitness_files:
             try:
-                plate_df = pd.read_csv(fitness, header=1).dropna(
-                    subset=["Compound Name"]
-                )
+                # Read the file into a DataFrame without assuming any header
+                df = pd.read_csv(fitness, header=None)
+
+                # Check if the first entry contains "Compound name (signal)"
+                if "Compound name (signal)" in str(df.iloc[0, 0]):
+                    # Use the second row as the header
+                    df.columns = df.iloc[1]  # Set the second row as the header
+                    df = (
+                        df[2:].reset_index(drop=True).copy()
+                    )  # Drop the first two rows (metadata and headers)
+                else:
+                    # Use the first row as the header
+                    df.columns = df.iloc[0]  # Set the first row as the header
+                    df = (
+                        df[1:].reset_index(drop=True).copy()
+                    )  # Drop the first row (headers)
+
+                plate_df = df.dropna(subset=["Compound Name"])
                 plate_name = str(fitness.name).split(".")[0]
 
                 # add a column for the plate name
@@ -100,38 +129,11 @@ with c2:
 padd3, c0, padd4 = st.columns([1, 6, 1])
 
 
-def format_dataframes(seq_variant, df):
-    seq_variant["id"] = [f"{p}_{w}" for p, w in seq_variant[["Plate", "Well"]].values]
-    df["id"] = [f"{p}_{w}" for p, w in df[["Plate", "Well"]].values]
-    df.set_index("id", inplace=True)
-    seq_variant.set_index("id", inplace=True)
-
-    df = df.join(seq_variant, rsuffix="_processed_plate_df", how="outer")
-    df["Type"] = [
-        m if "*" not in str(v) else "#TRUNCATED#"
-        for m, v in df[["amino-acid_substitutions", "aa_sequence"]].values
-    ]
-
-    df["Type"] = [v if v != "-" else "#DELETION#" for v in df["Type"].values]
-    df["Type"] = [v if str(v)[0] == "#" else "#VARIANT#" for v in df["Type"].values]
-    df["Type"] = [v if v != "#DELETION#" else "Deletion" for v in df["Type"].values]
-    df["Type"] = [v if v != "#VARIANT#" else "Variant" for v in df["Type"].values]
-    df["Type"] = [v if v != "#PARENT#" else "Parent" for v in df["Type"].values]
-    df["Type"] = [v if v != "#TRUNCATED#" else "Truncated" for v in df["Type"].values]
-    df["Type"] = [v if v != "#LOW#" else "Low" for v in df["Type"].values]
-    df["Type"] = [v if v != "#N.A.#" else "Empty" for v in df["Type"].values]
-
-    return df
-
-
 def make_alignment_plot(df):
     # Streamlit app
     st.title("Alignment Count Plot")
     st.write("This is a histogram showing alignment counts categorized by type.")
 
-    df["size"] = [
-        m + 1 if isinstance(m, int) and m > 0 else 1 for m in df["# Mutations"]
-    ]
     # Define custom color mapping
     color_mapping = {
         "Empty": "lightgrey",
@@ -165,10 +167,10 @@ def make_alignment_plot(df):
     )
 
     # Display the plot in Streamlit
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, config=config)
 
 
-def make_scatter_plot(df):
+def make_scatter_plot(df, parents_list):
     # If there are more than 1 in the fitness, plot both.
     # ---------------------------------------------------------
     if len(products) > 1:
@@ -193,6 +195,19 @@ def make_scatter_plot(df):
         "Variant": "#3A578F",
     }
 
+    SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
+
+    # Define the order of the legend with parents first
+    type_order = ["Empty", "Low", "Deletion", "Truncated", "Parent", "Variant"]
+
+    shape_mapping = {
+        p: s for p, s in zip(parents_list, SHPAE_LIST[: len(parents_list)])
+    }
+
+    df["size"] = [
+        m + 1 if isinstance(m, int) and m > 0 else 1 for m in df["# Mutations"]
+    ]
+
     # Create the Plotly scatter plot
     fig = px.scatter(
         df,
@@ -200,11 +215,23 @@ def make_scatter_plot(df):
         y=prod_2,
         color="Type",
         color_discrete_map=color_mapping,
+        symbol="Parent_Name",
+        symbol_map=shape_mapping,
         size="size",
         category_orders={
-            "Type": ["Empty", "Low", "Deletion", "Truncated", "Parent", "Variant"]
+            "Parent_Name": parents_list,
+            "Type": type_order,
         },
-        hover_data=["Type", "amino-acid_substitutions", prod_1, prod_2, "size"],
+        hover_data=[
+            "Type",
+            "Parent_Name",
+            "Plate",
+            "Well",
+            "amino-acid_substitutions",
+            "# Mutations",
+            prod_1,
+            prod_2,
+        ],
         title=f"{prod_1} vs {prod_2}",
     )
 
@@ -216,7 +243,248 @@ def make_scatter_plot(df):
     fig.update_layout(
         legend=dict(title="Type", x=1.05, y=1, xanchor="left", yanchor="top")
     )
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, config=config)
+
+
+def plot_bar_point(
+    df,
+    x,
+    y,
+    x_label=None,
+    y_label=None,
+    title=None,
+    if_max=False,
+    bar_color=None,
+    colorscale=None,
+    highlight_label=None,  # New: Value to highlight
+    highlight_color="white",  # New: Color for the highlighted bar
+    showlegend=True,
+):
+
+    # Group data by `x` and calculate mean for bars
+    bar_data = df.groupby(x).mean()[y].reset_index()
+
+    if bar_color:
+        bar_kwargs = dict(marker_color=bar_color)
+    elif colorscale:
+        # Define bar colors conditionally
+        bar_colors = [
+            highlight_color if label == highlight_label else value
+            for label, value in zip(bar_data[x], bar_data[y])
+        ]
+
+        # Define bar line styles conditionally
+        bar_lines = [
+            {"color": "black", "width": 2}
+            if val == highlight_label
+            else {"color": "white", "width": 0}
+            for val in bar_data[x]
+        ]
+
+        bar_kwargs = dict(
+            marker=dict(
+                color=bar_colors,  # Color based on y-values
+                colorscale=colorscale,  # Use the specified colorscale
+                line=dict(
+                    color=[line["color"] for line in bar_lines],
+                    width=[line["width"] for line in bar_lines],
+                ),  # Add outlines for highlighted bar
+                showscale=True,  # Show color scale legend
+                colorbar=dict(
+                    title=dict(
+                        text=get_y_label(y),
+                        side="right",  # Move title to the left of the color bar
+                        # standoff=15,  # Adjust the spacing
+                    ),
+                    thickness=15,  # Set the length of the color bar
+                    outlinewidth=0,  # Remove the border of the color bar
+                ),  # Add title to the color scale
+            )
+        )
+    else:
+        bar_kwargs = dict()
+
+    # Create bar plot
+    bar_trace = go.Bar(x=bar_data[x], y=bar_data[y], name="Average", **bar_kwargs)
+
+    # Create scatter plot
+    scatter_trace = go.Scatter(
+        x=df[x],
+        y=df[y],
+        mode="markers",
+        name="Points",
+        marker=dict(size=8, color="gray", opacity=0.6),
+        text=df[["Plate", "Well"]].astype(str).agg(", ".join, axis=1),  # Tooltip info
+    )
+
+    # Add max points (if requested)
+    traces = [bar_trace, scatter_trace]
+    if if_max:
+        max_data = df.loc[df.groupby(x)[y].idxmax()]
+        max_trace = go.Scatter(
+            x=max_data[x],
+            y=max_data[y],
+            mode="markers",
+            name="Max",
+            marker=dict(size=10, color="orange"),
+            text=max_data[["Plate", "Well"]].astype(str).agg(", ".join, axis=1),
+        )
+        traces.append(max_trace)
+
+    # Combine all traces
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        title=title or f"{x} vs {y}",
+        xaxis=dict(
+            title=x_label or get_x_label(x),
+            showline=True,
+            linewidth=1,
+            linecolor="gray",
+        ),
+        yaxis=dict(
+            title=y_label or get_y_label(y),
+            showline=True,
+            linewidth=1,
+            linecolor="gray",  # Color of the axis line
+        ),
+        showlegend=showlegend,
+    )
+
+    return fig
+
+
+def agg_parent_plot(df, ys):
+    # Create plots for each metric
+    plots = [
+        plot_bar_point(
+            df,
+            x="Parent_Name",
+            y=y,
+            bar_color="#97CA43",
+            title=f"{get_y_label(y)} across parents",
+            if_max=True,
+        )
+        for y in ys
+        if y in df.columns
+    ]
+
+    if not plots:
+        return None
+
+    # Display plots in Streamlit
+    for plot in plots:
+        st.plotly_chart(plot, config=config)
+
+
+def agg_mut_plot(sites_dict, single_ssm_df, ys):
+    """
+    Create individual plots for each parent and their respective sites.
+
+    Args:
+    - sites_dict (dict): A dictionary where keys are parents and values are lists of sites.
+    - single_ssm_df (pd.DataFrame): DataFrame containing the single site mutation data.
+    - ys (list): List of columns to plot.
+    """
+    for parent, sites in sites_dict.items():
+        st.subheader(f"Parent: {parent}")  # Section title for each parent
+
+        for site in sites:
+            # Preprocess the site-specific data
+            site_df = prep_aa_order(
+                get_single_ssm_site_df(single_ssm_df, parent=parent, site=site)
+            )
+
+            if site_df.empty:
+                st.warning(f"No data available for Parent: {parent}, Site: {site}")
+                continue  # Skip if there's no data for the site
+
+            site_info = (
+                site_df["parent_aa_loc"].unique()[0] if not site_df.empty else "Unknown"
+            )
+
+            st.markdown(f"**Site: {site_info}**")  # Add site-specific label
+
+            # Generate plots for each `y` value
+            for y in ys:
+                if y in site_df.columns:
+                    fig = plot_bar_point(
+                        site_df,
+                        x="mut_aa",
+                        y=y,
+                        title=f"Parent: {parent}, Site: {site_info}, Metric: {get_y_label(y)}",
+                        if_max=False,
+                        highlight_label=site_info[0],  # New: Value to highlight
+                        highlight_color="white",  # New: Color for the highlighted bar
+                        colorscale="RdBu_r",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig, config=config)
+
+
+def plot_single_ssm_avg(single_ssm_df, ys):
+    # Preprocess data for each parent
+    parents = single_ssm_df["Parent_Name"].unique()
+
+    # Check if the data is empty
+    if single_ssm_df.empty:
+        st.warning("No data available to plot.")
+        return
+
+    # Create a container for all the plots
+    all_plots = []
+
+    for parent_name in parents:
+        for y in ys:
+            if y in single_ssm_df.columns:
+                sliced_df = prep_aa_order(
+                    single_ssm_df[single_ssm_df["Parent_Name"] == parent_name]
+                )
+                # Skip if sliced_df is empty
+                if sliced_df.empty:
+                    continue
+
+                # Prepare heatmap data
+                heatmap_data = sliced_df.pivot_table(
+                    index="mut_aa", columns="parent_aa_loc", values=y, aggfunc="mean"
+                ).reindex(
+                    columns=sorted(
+                        sliced_df["parent_aa_loc"].dropna().unique(),
+                        key=lambda x: int(re.search(r"(\d+)$", str(x)).group())
+                        if re.search(r"(\d+)$", str(x))
+                        else 0,
+                    )
+                )
+
+                # Create Plotly heatmap
+                fig = px.imshow(
+                    heatmap_data.T,
+                    color_continuous_scale="RdBu_r",
+                    labels={
+                        "x": "Amino acid substitutions",
+                        "y": "Position",
+                        "color": y,
+                    },
+                    title=f"Average Single Site Substitution for {parent_name}",
+                )
+
+                # Update colorbar settings
+                fig.update_coloraxes(
+                    colorbar_title=get_y_label(y),
+                    colorbar=dict(
+                        title_side="right",  # Move title to the left of the color bar
+                    ),
+                )
+
+                # Remove horizontal gridlines
+                fig.update_layout(
+                    xaxis=dict(showgrid=False),  # Disable gridlines for x-axis
+                    yaxis=dict(showgrid=False),  # Disable gridlines for y-axis
+                )
+                all_plots.append(fig)
+
+    # Render all plots in Streamlit
+    for fig in all_plots:
+        st.plotly_chart(fig, config=config)
 
 
 def seqfit_runner():
@@ -231,13 +499,11 @@ def seqfit_runner():
         products=products, fit_df=fit_df, seq_df=seq_variant, plate_names=plate_names
     )
 
-    df["# Mutations"] = [
-        len(str(m).split("_")) if m not in ["#N.A.#", "#PARENT#", "-", "#LOW#"] else 0
-        for m in df["amino-acid_substitutions"].values
-    ]
+    fold_products = [f"{p}_fold" for p in products]
+    parents_list = df["Parent_Name"].unique()
 
     # ------------------------ Display paired seq function data as a table
-    st.title("Joined sequence function data")
+    st.title("Joined sequence function data (fold change wrt parent per plate)")
     st.dataframe(df)  # Interactive table with scrollbars
 
     # ------------------------ Stats
@@ -265,11 +531,26 @@ def seqfit_runner():
     st.dataframe(stats_df)  # Interactive table with scrollbars
 
     # -------------------------- Make visualisations
-    df = format_dataframes(df, seq_variant)
 
     make_alignment_plot(df)
-    make_scatter_plot(df)
-    # gen_seqfitvis(df, products)
+    make_scatter_plot(df, parents_list)
+    # st.bokeh_chart(gen_seqfitvis(df, products))
+    # Generate parent plot
+    st.header("Parent Aggregation")
+    agg_parent_plot(df, ys=fold_products)
+
+    # Generate mutation plots
+    st.header("Mutation Aggregation")
+    single_ssm_df = prep_single_ssm(df)
+    plot_single_ssm_avg(single_ssm_df, ys=fold_products)
+
+    # # Generate single SSM plots
+    st.header("Single SSM Heatmap")
+    agg_mut_plot(
+        sites_dict=get_parent2sitedict(single_ssm_df),
+        single_ssm_df=single_ssm_df,
+        ys=fold_products,
+    )
 
     st.subheader("Done LevSeq!")
 
