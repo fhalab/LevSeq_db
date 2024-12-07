@@ -4,7 +4,7 @@ import pandas as pd
 from threading import Thread
 import plotly.express as px
 import plotly.graph_objects as go
-from levseq_vis.seqfit import (
+from levseq_vis_dev.seqfit import (
     normalise_calculate_stats,
     process_plate_files,
     prep_aa_order,
