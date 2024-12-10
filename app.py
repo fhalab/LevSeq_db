@@ -277,7 +277,7 @@ def plot_bar_point(
 
         # Define bar line styles conditionally
         bar_lines = [
-            {"color": "#505050", "width": 2}
+            {"color": "#gray", "width": 2}
             if val == highlight_label
             else {"color": "white", "width": 0}
             for val in bar_data[x]
@@ -621,7 +621,7 @@ def seqfit_runner():
 
     # Generate embedding plot
     st.header("Sequence Embedding")
-    st.subheader("esm2_t12_35M_UR50D PCA")
+    st.subheader("esm2_t12_35M_UR50D PCA (will take a while)")
     agg_embxy(append_xy(df, products=fold_products), products=fold_products)
 
     st.subheader("Done LevSeq!")
