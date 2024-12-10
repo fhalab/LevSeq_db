@@ -277,7 +277,7 @@ def plot_bar_point(
 
         # Define bar line styles conditionally
         bar_lines = [
-            {"color": "#gray", "width": 2}
+            {"color": "gray", "width": 2}
             if val == highlight_label
             else {"color": "white", "width": 0}
             for val in bar_data[x]
