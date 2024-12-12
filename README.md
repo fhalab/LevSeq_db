@@ -2,6 +2,8 @@
 
 Web app for combining and visualising [LevSeq](https://github.com/fhalab/LevSeq) sequence function data.
 
+Visit the app on [here](https://levseqdb.streamlit.app/)!
+
 Test it out with the [data](data/) in the data folder. Use the columns in the screenshot below. 
 
 Once you have your figures you can download the csv results by hovering on any of the tables.
@@ -45,7 +47,9 @@ This shows the PCA of the sequence embeddings for each variant colored by the fi
 ![align](images/emb_pca.png)
 
 ## Please provide feedback
-Leave a feature request in the issues or on [LevSeq](https://github.com/fhalab/LevSeq) . 
+Leave a feature request in the issues or on [LevSeq](https://github.com/fhalab/LevSeq).
+
+Feel free to also reach us via [email](mailto:levseqdb@gmail.com). 
 
 ## Cite
 Cite our [paper](https://doi.org/10.1101/2024.09.04.611255) please if you use it.

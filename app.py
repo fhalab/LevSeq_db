@@ -47,7 +47,9 @@ def _max_width_():
 
 
 st.title("LevSeq sequence function pairing")
-st.subheader("Beta mode, for issues post [here](https://github.com/fhalab/LevSeq)")
+st.subheader(
+    "Beta mode, for issues post [here](https://github.com/fhalab/LevSeq) or via [email](mailto:levseqdb@gmail.com)"
+)
 
 c1, c2 = st.columns([6, 6])
 
@@ -61,7 +63,7 @@ with c1:
     )
 with c2:
     fitness_files = st.file_uploader(
-        "Fitness files",
+        "Fitness files (support multiple files)",
         key="2",
         accept_multiple_files=True,  # Allow multiple files
         help="To activate 'wide mode', go to the hamburger menu > Settings > turn on 'wide mode'",
