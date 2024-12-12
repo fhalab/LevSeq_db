@@ -123,7 +123,7 @@ with c2:
         # Display multi-select dropdown for products
         if products_set:
             products = st.multiselect(
-                "Select products",
+                "Select products (support multipe selection)",
                 sorted(products_set),  # Sort for better UI experience
                 help="Select one or more products to filter.",
             )
@@ -279,7 +279,7 @@ def plot_bar_point(
 
         # Define bar line styles conditionally
         bar_lines = [
-            {"color": "gray", "width": 2}
+            {"color": "lightgray", "width": 2}
             if val == highlight_label
             else {"color": "white", "width": 0}
             for val in bar_data[x]
