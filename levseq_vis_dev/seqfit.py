@@ -205,17 +205,18 @@ def work_up_lcms(
     """
 
     if isinstance(file, str):
-        # Read the first row of the file to inspect
-        first_row = pd.read_csv(file, nrows=2, header=None)
+        # # Read the first row of the file to inspect
+        # first_row = pd.read_csv(file, nrows=2, header=None)
 
-        # Check if the first entry contains "Compound name (signal)"
-        if "Compound name (signal)" in str(first_row.iloc[0, 0]):
-            header_row = 1  # The actual header is on the second row
-        else:
-            header_row = 0  # The first row is the actual header
+        # # Check if the first entry contains "Compound name (signal)"
+        # if "Compound name (signal)" in str(first_row.iloc[0, 0]):
+        #     header_row = 1  # The actual header is on the second row
+        # else:
+        #     header_row = 0  # The first row is the actual header
 
         # Load the CSV with the determined header row
-        df = pd.read_csv(file, header=header_row)
+        # df = pd.read_csv(file, header=header_row)
+        df = pd.read_csv(file)
     else:
         # Change to handling both
         df = file
