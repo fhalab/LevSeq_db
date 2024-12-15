@@ -83,15 +83,24 @@ with c2:
         for fitness in fitness_files:
             try:
                 # Read the file into a DataFrame without assuming any header
-                df = pd.read_csv(fitness, header=None)
+                df = pd.read_csv(fitness)
+
+                # check if multi index due to spaces in the header
+                if isinstance(df.index, pd.MultiIndex):
+                    df = df.reset_index()
+
+                if "Compound Name" in df.columns:
+                    # Use the column names as the header
+                    pass
 
                 # Check if the first entry contains "Compound name (signal)"
-                if "Compound name (signal)" in str(df.iloc[0, 0]):
+                elif "Compound name (signal)" in df.iloc[0].astype(str).values:
                     # Use the second row as the header
                     df.columns = df.iloc[1]  # Set the second row as the header
                     df = (
                         df[2:].reset_index(drop=True).copy()
                     )  # Drop the first two rows (metadata and headers)
+
                 else:
                     # Use the first row as the header
                     df.columns = df.iloc[0]  # Set the first row as the header
