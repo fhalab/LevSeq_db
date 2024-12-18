@@ -31,6 +31,8 @@ config = {
     }
 }
 
+SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
+
 
 def _max_width_():
     max_width_str = f"max-width: 1800px;"
@@ -207,8 +209,6 @@ def make_scatter_plot(df, parents_list):
         "Parent": "#97CA43",
         "Variant": "#3A578F",
     }
-
-    SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
 
     # Define the order of the legend with parents first
     type_order = ["Empty", "Low", "Deletion", "Truncated", "Parent", "Variant"]
@@ -411,11 +411,46 @@ def agg_mut_plot(sites_dict, single_ssm_df, ys):
                 st.warning(f"No data available for Parent: {parent}, Site: {site}")
                 continue  # Skip if there's no data for the site
 
+            sub_aas = site_df["amino-acid_substitutions"].unique()
+            # skip if there is only one AA other than the parent
+            if len(sub_aas) == 2:
+
+                sub_aa = sub_aas[0] if sub_aas[1] == "#PARENT#" else sub_aas[1]
+
+                st.markdown(
+                    f"Only {sub_aa} AA other than the parent for Parent: {parent}, Site: {site}"
+                )
+                name_col = [
+                    "Parent_Name",
+                    "amino-acid_substitutions",
+                    "# Mutations",
+                    "Type",
+                ]
+
+                # Aggregate with both mean and std for numerical columns
+                aggregated_df = (
+                    site_df[name_col + ys]
+                    .groupby(name_col)
+                    .agg({col: ["mean", "std"] for col in ys})
+                    .reset_index()
+                )
+
+                # Flatten the multi-level columns for readability
+                aggregated_df.columns = [
+                    "_".join(filter(None, col)).strip()
+                    if isinstance(col, tuple)
+                    else col
+                    for col in aggregated_df.columns
+                ]
+
+                # Display the aggregated DataFrame
+                st.dataframe(aggregated_df)
+
+                continue
+
             site_info = (
                 site_df["parent_aa_loc"].unique()[0] if not site_df.empty else "Unknown"
             )
-
-            st.markdown(f"**Site: {site_info}**")  # Add site-specific label
 
             # Generate plots for each `y` value
             for y in ys:
@@ -500,7 +535,7 @@ def plot_single_ssm_avg(single_ssm_df, ys):
         st.plotly_chart(fig, config=config)
 
 
-def plot_embxy(df: pd.DataFrame, product: str):
+def plot_embxy(df: pd.DataFrame, product: str, parents_list: list):
 
     """
     Function to plot the x, y embedding coordinates colored by a specified metric using Plotly.
@@ -516,31 +551,48 @@ def plot_embxy(df: pd.DataFrame, product: str):
         A Plotly figure object containing the scatter plot.
     """
 
+    shape_mapping = {
+        p: s for p, s in zip(parents_list, SHPAE_LIST[: len(parents_list)])
+    }
+
     # Create a scatter plot using Plotly Express
     fig = px.scatter(
         df,
         x="x_coordinate",
         y="y_coordinate",
         color=product,
+        symbol="Parent_Name",
+        symbol_map=shape_mapping,
         hover_data=["ID", "amino-acid_substitutions", "Parent_Name"],
-        title=f"{product} in sequence embedding space",
+        title=f"{product} PCA in the sequence embedding space",
         color_continuous_scale="RdBu_r",
         labels={
-            "x_coordinate": "Embedding x",
-            "y_coordinate": "Embedding y",
+            "x_coordinate": "Embedding PCA x",
+            "y_coordinate": "Embedding PCA y",
             product: product,
         },
     )
+    
     # Customize layout
     fig.update_layout(
         width=800,
         height=600,
-        coloraxis_colorbar={"title": product},
+        coloraxis_colorbar={
+            "title": product,
+            "x": 1.1,  # Move the color bar to the right of the plot
+        },
+        legend={
+            "x": 0,     # Position the legend on the left
+            "y": 1,     # Align the legend to the top
+            "xanchor": "left",
+            "yanchor": "top",
+        },
     )
+
     return fig
 
 
-def agg_embxy(df: pd.DataFrame, products: list):
+def agg_embxy(df: pd.DataFrame, products: list, parents_list: list):
     """
     Function to aggregate the x, y embedding coordinates colored by different metrics using Plotly.
 
@@ -555,7 +607,11 @@ def agg_embxy(df: pd.DataFrame, products: list):
         A list of Plotly figure objects containing the scatter plots.
     """
 
-    plots = [plot_embxy(df, product) for product in products if product in df.columns]
+    plots = [
+        plot_embxy(df, product, parents_list)
+        for product in products
+        if product in df.columns
+    ]
 
     if not plots:
         return None
@@ -623,7 +679,7 @@ def seqfit_runner():
     plot_single_ssm_avg(single_ssm_df, ys=fold_products)
 
     # Generate single SSM plots
-    st.header("Single SSM Heatmap")
+    st.header("Single SSM by Parent and Site")
     agg_mut_plot(
         sites_dict=get_parent2sitedict(single_ssm_df),
         single_ssm_df=single_ssm_df,
@@ -633,7 +689,10 @@ def seqfit_runner():
     # Generate embedding plot
     st.header("Sequence Embedding")
     st.subheader("esm2_t12_35M_UR50D PCA (will take a while)")
-    agg_embxy(append_xy(df, products=fold_products), products=fold_products)
+    # take out all the stop codon containing sequences
+    df_xy = append_xy(df, products=fold_products)
+    print(df_xy)
+    agg_embxy(df_xy, products=fold_products, parents_list=parents_list)
 
     st.subheader("Done LevSeq!")
 

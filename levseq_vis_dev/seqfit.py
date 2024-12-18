@@ -54,7 +54,7 @@ AA_NUMB = len(ALL_AAS)
 AA_TO_IND = {aa: i for i, aa in enumerate(ALL_AAS)}
 
 # Set up cuda variables
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 
 
 def normalise_calculate_stats(
@@ -614,13 +614,10 @@ def append_xy(
 
     # Filter valid sequences from the `aa_sequence` column
     df = (
-        df[df["Type"].isin(["Parent", "Variant", "Truncated"])]
+        df[df["Type"].isin(["Parent", "Variant"])]
         .dropna(subset=["aa_sequence"])
         .copy()
     )
-
-    # Preprocess sequences to handle stop codons
-    df["processed_aa_sequence"] = df["aa_sequence"].apply(up2stopcodon)
 
     if "esm" in model_name:
 
@@ -636,7 +633,7 @@ def append_xy(
         # Prepare sequences for embedding
         # Extract data into the desired format
         formatted_data = [
-            (row["ID"], row["processed_aa_sequence"]) for _, row in df.iterrows()
+            (row["ID"], row["aa_sequence"]) for _, row in df.iterrows()
         ]
 
         # Initialize results
@@ -678,13 +675,13 @@ def append_xy(
     else:
         all_sequence_representations = []
 
-        for seq in tqdm(df["processed_aa_sequence"].tolist()):
+        for seq in tqdm(df["aa_sequence"].tolist()):
             # padding: (top, bottom), (left, right)
             all_sequence_representations.append(
                 np.pad(
                     np.array(np.eye(AA_NUMB)[[AA_TO_IND[aa] for aa in seq]]),
                     pad_width=(
-                        (0, df["processed_aa_sequence"].apply(len).max() - len(seq)),
+                        (0, df["aa_sequence"].apply(len).max() - len(seq)),
                         (0, 0),
                     ),
                 )
