@@ -33,6 +33,19 @@ config = {
 
 SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
 
+# if old version of the file, rename the columns
+LevSeq_cols = {
+    "plate": "Plate",
+    "well": "Well",
+    "nucleotide_mutation": "Variant",
+    "alignment_count": "Alignment Count",
+    "average_mutation_frequency": "Average mutation frequency",
+    "p_value": "P value",
+    "p_adj_value": "P adj. value",
+    "amino_acid_substitutions": "amino-acid_substitutions",
+    "alignment_probability": "Alignment Probability"
+}
+
 
 def _max_width_():
     max_width_str = f"max-width: 1800px;"
@@ -74,6 +87,8 @@ with c2:
 with c1:
     if seq_variant is not None:
         seq_variant = pd.read_csv(seq_variant)
+        # if old version of the file, rename the columns
+        seq_variant = seq_variant.rename(columns=LevSeq_cols)
 
 with c2:
 
