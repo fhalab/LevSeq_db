@@ -14,10 +14,17 @@ import pandas as pd
 import numpy as np
 
 from sklearn.decomposition import PCA
+do_pca = True
+try:
+    import esm
+    import torch
 
-import esm
-import torch
+    # Set up cuda variables
+    DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 
+except ImportError:
+    do_pca = False
+    print("You didn't have ESM installed so not going to do the PCA visualization")
 import ninetysix as ns
 
 
@@ -53,8 +60,6 @@ AA_NUMB = len(ALL_AAS)
 # Create a dictionary that links each amino acid to an index
 AA_TO_IND = {aa: i for i, aa in enumerate(ALL_AAS)}
 
-# Set up cuda variables
-DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 
 
 def normalise_calculate_stats(
