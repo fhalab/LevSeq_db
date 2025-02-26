@@ -65,7 +65,9 @@ st.title("LevSeq sequence function pairing")
 st.subheader(
     "Beta mode, for issues post [here](https://github.com/fhalab/LevSeq) or via [email](mailto:levseqdb@gmail.com)"
 )
-
+st.subheader(
+    "Note! Your file name of your plate needs to match the plate name in the LevSeq file, see our [examples](https://github.com/fhalab/LevSeq) for details :) "
+)
 c1, c2 = st.columns([6, 6])
 
 df, seq_variant, fitness_files = None, None, None
