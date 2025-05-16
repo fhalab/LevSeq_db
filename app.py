@@ -4,6 +4,7 @@ import pandas as pd
 from threading import Thread
 import plotly.express as px
 import plotly.graph_objects as go
+from rdkit import Chem
 from levseq_vis_dev.seqfit import (
     normalise_calculate_stats,
     process_plate_files,
@@ -32,6 +33,18 @@ config = {
 }
 
 SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
+
+# Function to validate SMILES string
+def validate_smiles(smiles_string):
+    """
+    Validates if a string is a valid SMILES using RDKit.
+    Returns True if valid, False otherwise.
+    """
+    if not smiles_string:
+        return False
+    
+    mol = Chem.MolFromSmiles(smiles_string)
+    return mol is not None
 
 # if old version of the file, rename the columns
 LevSeq_cols = {
@@ -155,6 +168,34 @@ with c2:
                 sorted(products_set),  # Sort for better UI experience
                 help="Select one or more products to filter.",
             )
+            
+            # Dictionary to store SMILES for each selected product
+            smiles_dict = {}
+            
+            # Create a SMILES input box for each selected product
+            if products:
+                st.subheader("Enter SMILES for selected products")
+                
+                # Use columns to make it compact but readable
+                for product in products:
+                    smiles_input = st.text_input(
+                        f"SMILES for {product}",
+                        key=f"smiles_{product}",
+                        help="Enter a canonical SMILES string for this compound"
+                    )
+                    
+                    # Validate SMILES
+                    if smiles_input:
+                        if validate_smiles(smiles_input):
+                            st.success(f"Valid SMILES for {product}")
+                            smiles_dict[product] = smiles_input
+                        else:
+                            st.error(f"Invalid SMILES for {product}. Please enter a valid SMILES string.")
+                    else:
+                        st.warning(f"Please enter a SMILES string for {product}")
+                
+                # Store the SMILES dictionary in session state
+                st.session_state['smiles_dict'] = smiles_dict
         else:
             st.warning("No products found in the fitness files.")
 
@@ -644,11 +685,23 @@ def seqfit_runner():
     if fit_df is None or seq_variant is None:
         st.error("Please upload both Sequence and Fitness files.")
         return
-
+        
+    # Check if all products have associated SMILES
+    if 'smiles_dict' not in st.session_state or not all(product in st.session_state['smiles_dict'] for product in products):
+        st.error("Please provide valid SMILES for all selected products.")
+        return
+        
+    # Get SMILES dictionary from session state
+    smiles_dict = st.session_state['smiles_dict']
+    
     # Process variants
     df = process_plate_files(
         products=products, fit_df=fit_df, seq_df=seq_variant, plate_names=plate_names
     ).copy()
+    
+    # Add SMILES data to the dataframe
+    for product, smiles in smiles_dict.items():
+        df[f"{product}_SMILES"] = smiles
 
     fold_products = [f"{p}_fold" for p in products]
     parents_list = df["Parent_Name"].unique()
@@ -723,7 +776,23 @@ def run_run():
 
 with c0:
     if c1 is not None and c2 is not None:
-        st.button("Run LevSeq <3", on_click=run_run)
+        # Only enable the button if all products have valid SMILES
+        all_smiles_valid = True
+        
+        if 'products' in locals() and products:
+            if 'smiles_dict' not in st.session_state:
+                all_smiles_valid = False
+            else:
+                for product in products:
+                    if product not in st.session_state.get('smiles_dict', {}):
+                        all_smiles_valid = False
+                        break
+        
+        if all_smiles_valid:
+            st.button("Run LevSeq <3", on_click=run_run)
+        else:
+            st.warning("Please provide valid SMILES for all selected products before running.")
+            st.button("Run LevSeq <3", on_click=run_run, disabled=True)
     else:
         st.info(
             f"""

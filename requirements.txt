@@ -12,3 +12,4 @@ statsmodels
 tqdm
 fair-esm
 torch
+rdkit
