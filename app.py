@@ -679,104 +679,135 @@ def agg_embxy(df: pd.DataFrame, products: list, parents_list: list):
         st.plotly_chart(plot, config=config)
 
 
-def seqfit_runner():
-    st.info(f"Running LevSeq using your files! Results will appear below shortly.")
+def seqfit_runner(smiles_dict):
+    status_text = st.empty()
+    error_text = st.empty()
+    status_text.info(f"Running LevSeq using your files! Results will appear below shortly.")
 
     if fit_df is None or seq_variant is None:
-        st.error("Please upload both Sequence and Fitness files.")
+        error_text.error("Please upload both Sequence and Fitness files.")
         return
-        
-    # Check if all products have associated SMILES
-    if 'smiles_dict' not in st.session_state or not all(product in st.session_state['smiles_dict'] for product in products):
-        st.error("Please provide valid SMILES for all selected products.")
-        return
-        
-    # Get SMILES dictionary from session state
-    smiles_dict = st.session_state['smiles_dict']
     
-    # Process variants
-    df = process_plate_files(
-        products=products, fit_df=fit_df, seq_df=seq_variant, plate_names=plate_names
-    ).copy()
-    
-    # Add SMILES data to the dataframe
-    for product, smiles in smiles_dict.items():
-        df[f"{product}_SMILES"] = smiles
+    try:
+        import traceback
+        status_text.info("Step 1: Processing plate files...")
+        # Process variants
+        try:
+            df = process_plate_files(
+                products=products, fit_df=fit_df, seq_df=seq_variant, plate_names=plate_names
+            ).copy()
+            status_text.success("✅ Plate files processed successfully")
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            error_text.error(f"Error in process_plate_files: {str(e)}\n\nTraceback:\n{error_trace}")
+            return
+        
+        status_text.info("Step 2: Adding SMILES data...")
+        # Add SMILES data to the dataframe
+        for product, smiles in smiles_dict.items():
+            df[f"{product}_SMILES"] = smiles
+        status_text.success("✅ SMILES data added successfully")
 
-    fold_products = [f"{p}_fold" for p in products]
-    parents_list = df["Parent_Name"].unique()
+        fold_products = [f"{p}_fold" for p in products]
+        parents_list = df["Parent_Name"].unique()
 
-    # ------------------------ Display paired seq function data as a table
-    st.title("Joined sequence function data (fold change wrt parent per plate)")
-    st.dataframe(df)  # Interactive table with scrollbars
+        # ------------------------ Display paired seq function data as a table
+        st.title("Joined sequence function data (fold change wrt parent per plate)")
+        st.dataframe(df)  # Interactive table with scrollbars
 
-    # ------------------------ Stats
-    value_columns = products
-    stats_df = pd.DataFrame()
-    for value in value_columns:
-        stats_df = pd.concat(
-            [
-                stats_df,
-                normalise_calculate_stats(
-                    df,
-                    [value],
-                    normalise="standard",
-                    stats_method="mannwhitneyu",
-                    parent_label="#PARENT#",
-                ),
-            ]
+        # ------------------------ Stats
+        value_columns = products
+        stats_df = pd.DataFrame()
+        for value in value_columns:
+            stats_df = pd.concat(
+                [
+                    stats_df,
+                    normalise_calculate_stats(
+                        df,
+                        [value],
+                        normalise="standard",
+                        stats_method="mannwhitneyu",
+                        parent_label="#PARENT#",
+                    ),
+                ]
+            )
+
+        stats_df = stats_df.sort_values(
+            by="amount greater than parent mean", ascending=False
+        )
+        # ------------------------ Display stats data as a table
+        st.title("Statistics on the function data")
+        st.dataframe(stats_df)  # Interactive table with scrollbars
+
+        # -------------------------- Make visualisations
+
+        make_alignment_plot(df)
+        make_scatter_plot(df, parents_list)
+        # Generate parent plot
+        st.header("Parent Aggregation")
+        agg_parent_plot(df, ys=fold_products)
+
+        # Generate mutation plots
+        st.header("Mutation Aggregation")
+        single_ssm_df = prep_single_ssm(df)
+        plot_single_ssm_avg(single_ssm_df, ys=fold_products)
+
+        # Generate single SSM plots
+        st.header("Single SSM by Parent and Site")
+        agg_mut_plot(
+            sites_dict=get_parent2sitedict(single_ssm_df),
+            single_ssm_df=single_ssm_df,
+            ys=fold_products,
         )
 
-    stats_df = stats_df.sort_values(
-        by="amount greater than parent mean", ascending=False
-    )
-    # ------------------------ Display stats data as a table
-    st.title("Statistics on the function data")
-    st.dataframe(stats_df)  # Interactive table with scrollbars
+        # Generate embedding plot
+        st.header("Sequence Embedding")
+        try:
+            st.subheader("esm2_t12_35M_UR50D PCA (will take a while)")
+            # take out all the stop codon containing sequences
+            df_xy = append_xy(df, products=fold_products)
+            agg_embxy(df_xy, products=fold_products, parents_list=parents_list)
+        except Exception as e:
+            st.error(f"Error generating embedding plot: {str(e)}")
+            st.info("Continuing with the rest of the analysis...")
 
-    # -------------------------- Make visualisations
-
-    make_alignment_plot(df)
-    make_scatter_plot(df, parents_list)
-    # st.bokeh_chart(gen_seqfitvis(df, products))
-    # Generate parent plot
-    st.header("Parent Aggregation")
-    agg_parent_plot(df, ys=fold_products)
-
-    # Generate mutation plots
-    st.header("Mutation Aggregation")
-    single_ssm_df = prep_single_ssm(df)
-    plot_single_ssm_avg(single_ssm_df, ys=fold_products)
-
-    # Generate single SSM plots
-    st.header("Single SSM by Parent and Site")
-    agg_mut_plot(
-        sites_dict=get_parent2sitedict(single_ssm_df),
-        single_ssm_df=single_ssm_df,
-        ys=fold_products,
-    )
-
-    # Generate embedding plot
-    st.header("Sequence Embedding")
-    st.subheader("esm2_t12_35M_UR50D PCA (will take a while)")
-    # take out all the stop codon containing sequences
-    df_xy = append_xy(df, products=fold_products)
-    print(df_xy)
-    agg_embxy(df_xy, products=fold_products, parents_list=parents_list)
-
-    st.subheader("Done LevSeq!")
+        st.subheader("Done LevSeq!")
+    except Exception as e:
+        st.error(f"An error occurred during LevSeq processing: {str(e)}")
 
 
 def run_run():
-    thread = Thread(target=seqfit_runner, args=())
-    add_script_run_ctx(thread)
-    thread.start()
-    thread.join()
+    # Use the global variables
+    global products, fit_df, seq_variant, plate_names
+    
+    # Validate in the main thread before starting the background process
+    if not products:
+        st.error("Please select at least one product.")
+        return
+        
+    if 'smiles_dict' not in st.session_state:
+        st.error("Missing SMILES dictionary in session state.")
+        return
+        
+    # Check that all products have valid SMILES
+    smiles_dict = st.session_state['smiles_dict']
+    missing_smiles = [p for p in products if p not in smiles_dict]
+    
+    if missing_smiles:
+        st.error(f"Missing valid SMILES for products: {', '.join(missing_smiles)}")
+        return
+    
+    # Don't use threading - it might be causing issues with Streamlit
+    # Just run the function directly in the main thread
+    st.info("Starting LevSeq processing...(running in main thread)")
+    
+    # Run directly without threading
+    seqfit_runner(smiles_dict)
 
 
 with c0:
     if c1 is not None and c2 is not None:
-        # Only enable the button if all products have valid SMILES
+        # Check if all products have valid SMILES
         all_smiles_valid = True
         
         if 'products' in locals() and products:
@@ -788,11 +819,11 @@ with c0:
                         all_smiles_valid = False
                         break
         
-        if all_smiles_valid:
-            st.button("Run LevSeq <3", on_click=run_run)
+        if all_smiles_valid and products:
+            st.button("Run LevSeq <3", on_click=run_run, key="run_button")
         else:
             st.warning("Please provide valid SMILES for all selected products before running.")
-            st.button("Run LevSeq <3", on_click=run_run, disabled=True)
+            st.button("Run LevSeq <3", disabled=True, key="disabled_button")
     else:
         st.info(
             f"""
