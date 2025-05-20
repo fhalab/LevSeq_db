@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+import os
 import pandas as pd
 from threading import Thread
 import plotly.express as px
@@ -711,9 +712,199 @@ def seqfit_runner(smiles_dict):
         fold_products = [f"{p}_fold" for p in products]
         parents_list = df["Parent_Name"].unique()
 
-        # ------------------------ Display paired seq function data as a table
-        st.title("Joined sequence function data (fold change wrt parent per plate)")
-        st.dataframe(df)  # Interactive table with scrollbars
+        # We'll only show the standardized format below
+        
+        # Format data in desired.csv format for download with melting of multiple products
+        def format_to_standard_csv(df, smiles_dict, seq_df):
+            # First, prepare the base columns common for all products
+            base_cols = {
+                'plate': df['Plate'],
+                'well': df['Well'],
+                'amino_acid_substitutions': df['amino-acid_substitutions'],
+                'alignment_count': df['Alignment Count'],
+                'average_mutation_frequency': df['Average mutation frequency'],
+                'nt_sequence': df['nt_sequence'],
+                'aa_sequence': df['aa_sequence'],
+                'parent_name': df['Parent_Name'],
+                'number_mutations': df['# Mutations'],
+                'type': df['Type']
+            }
+            
+            # Extract barcode_plate, p_value, and p_adj_value from the sequencing CSV if available
+            base_cols['barcode_plate'] = ""
+            base_cols['p_value'] = ""
+            base_cols['p_adj_value'] = ""
+            
+            # Check for barcode_plate in the sequencing CSV
+            if 'barcode_plate' in seq_df.columns:
+                # Create a mapping dictionary from plate+well to barcode_plate
+                plate_well_to_barcode = {}
+                for idx, row in seq_df.iterrows():
+                    if 'Plate' in row and 'Well' in row and 'barcode_plate' in row:
+                        key = (row['Plate'], row['Well'])
+                        plate_well_to_barcode[key] = row['barcode_plate']
+                
+                # Map barcode_plates to base_cols
+                barcode_plates = []
+                for plate, well in zip(base_cols['plate'], base_cols['well']):
+                    key = (plate, well)
+                    barcode_plates.append(plate_well_to_barcode.get(key, ""))
+                base_cols['barcode_plate'] = barcode_plates
+            
+            # Check if seq_df has the p-value columns
+            if 'P value' in seq_df.columns:
+                # Create a mapping dictionary from plate+well to p_value
+                plate_well_to_pvalue = {}
+                for idx, row in seq_df.iterrows():
+                    if 'Plate' in row and 'Well' in row and 'P value' in row:
+                        key = (row['Plate'], row['Well'])
+                        plate_well_to_pvalue[key] = row['P value']
+                
+                # Map p_values to base_cols
+                p_values = []
+                for plate, well in zip(base_cols['plate'], base_cols['well']):
+                    key = (plate, well)
+                    p_values.append(plate_well_to_pvalue.get(key, ""))
+                base_cols['p_value'] = p_values
+            
+            # Check if seq_df has the adjusted p-value columns
+            if 'P adj. value' in seq_df.columns:
+                # Create a mapping dictionary from plate+well to p_adj_value
+                plate_well_to_padj = {}
+                for idx, row in seq_df.iterrows():
+                    if 'Plate' in row and 'Well' in row and 'P adj. value' in row:
+                        key = (row['Plate'], row['Well'])
+                        plate_well_to_padj[key] = row['P adj. value']
+                
+                # Map p_adj_values to base_cols
+                p_adj_values = []
+                for plate, well in zip(base_cols['plate'], base_cols['well']):
+                    key = (plate, well)
+                    p_adj_values.append(plate_well_to_padj.get(key, ""))
+                base_cols['p_adj_value'] = p_adj_values
+            
+            # Define well sorting helper function that keeps products together
+            def sort_by_well(df):
+                # Extract unique wells in sorted order
+                all_wells = []
+                for well in df['well'].unique():
+                    well_info = extract_well_info(well)
+                    all_wells.append((well_info, well))
+                
+                # Sort wells by row and column (A1, A2, ..., B1, B2, ...)
+                sorted_wells = [w for _, w in sorted(all_wells)]
+                
+                # Create a new sorted dataframe
+                sorted_df = pd.DataFrame()
+                
+                # For each well, get all products in that well
+                for well in sorted_wells:
+                    well_rows = df[df['well'] == well]
+                    sorted_df = pd.concat([sorted_df, well_rows])
+                
+                return sorted_df.reset_index(drop=True)
+                
+            # If there are no products, return a dataframe with just the base columns
+            if not products:
+                standard_df = pd.DataFrame(base_cols)
+                standard_df['compound_smiles'] = ""
+                standard_df['fitness'] = 0
+                standard_df['fold_change'] = 0
+                standard_df['id'] = range(len(standard_df))
+                # Sort by well (A1, A2, etc.)
+                standard_df = sort_by_well(standard_df)
+                # Ensure columns are in the correct order
+                ordered_columns = ['id', 'barcode_plate', 'plate', 'well', 'amino_acid_substitutions', 
+                                  'alignment_count', 'average_mutation_frequency', 'p_value', 'p_adj_value', 
+                                  'nt_sequence', 'aa_sequence', 'compound_smiles', 'fitness', 'parent_name', 
+                                  'fold_change', 'number_mutations', 'type']
+                standard_df = standard_df[ordered_columns]
+                return standard_df
+            
+            # For each product, create a separate dataframe
+            all_dfs = []
+            
+            # Define well sorting helper function
+            def extract_well_info(well):
+                # Extract row letter and column number
+                if len(well) >= 2 and well[0].isalpha() and well[1:].isdigit():
+                    row_letter = well[0].upper()
+                    col_number = int(well[1:])
+                    # Return a tuple for sorting (row letter, column number)
+                    return (row_letter, col_number)
+                return ('Z', 999)  # Default for invalid wells
+            
+            # Get sorted indexes to maintain well order (A1, A2, ..., B1, B2, ...)
+            well_info = [(extract_well_info(well), i) for i, well in enumerate(base_cols['well'])]
+            sorted_indices = [idx for _, idx in sorted(well_info)]
+            
+            # Reorder base_cols by sorted well order
+            for key in base_cols:
+                if isinstance(base_cols[key], (list, pd.Series)):
+                    base_cols[key] = [base_cols[key][i] for i in sorted_indices]
+            
+            # For each product, create a dataframe with the sorted base columns
+            for product in products:
+                product_df = pd.DataFrame(base_cols)
+                
+                # Add product-specific columns
+                if product in smiles_dict:
+                    product_df['compound_smiles'] = smiles_dict[product]
+                else:
+                    product_df['compound_smiles'] = ""
+                
+                # Add fitness value from the product column
+                if product in df.columns:
+                    # Get values in the sorted order
+                    fitness_vals = [df[product].iloc[i] for i in sorted_indices]
+                    product_df['fitness'] = fitness_vals
+                else:
+                    product_df['fitness'] = 0
+                
+                # Add fold change from the product_fold column
+                fold_product = f"{product}_fold"
+                if fold_product in df.columns:
+                    # Get values in the sorted order
+                    fold_vals = [df[fold_product].iloc[i] for i in sorted_indices]
+                    product_df['fold_change'] = fold_vals
+                else:
+                    product_df['fold_change'] = 0
+                
+                # Add to our list of dataframes
+                all_dfs.append(product_df)
+            
+            # Concatenate all product dataframes
+            standard_df = pd.concat(all_dfs, ignore_index=True)
+            
+            # Sort the dataframe by well
+            standard_df = sort_by_well(standard_df)
+            
+            # Add id column
+            standard_df['id'] = range(len(standard_df))
+            
+            # Ensure columns are in the correct order
+            ordered_columns = ['id', 'barcode_plate', 'plate', 'well', 'amino_acid_substitutions', 
+                              'alignment_count', 'average_mutation_frequency', 'p_value', 'p_adj_value', 
+                              'nt_sequence', 'aa_sequence', 'compound_smiles', 'fitness', 'parent_name', 
+                              'fold_change', 'number_mutations', 'type']
+            standard_df = standard_df[ordered_columns]
+            
+            return standard_df
+            
+        # Create a formatted dataframe for download
+        standard_df = format_to_standard_csv(df, smiles_dict, seq_variant)
+        
+        # Save to the streamlit-data directory
+        os.makedirs("streamlit-data", exist_ok=True)
+        standard_df.to_csv("streamlit-data/desired.csv", index=False)
+        
+        # Show the standard format data
+        st.title("Standardized sequence-function data")
+        st.dataframe(standard_df)
+        
+        # Add download button for standard format only
+        from functionforDownloadButtons import download_button
+        download_button(standard_df, 'levseq_results.csv', 'Download results (CSV)')
 
         # ------------------------ Stats
         value_columns = products
