@@ -522,10 +522,10 @@ def norm2parent(plate_df: pd.DataFrame, products: list) -> pd.DataFrame:
         The DataFrame should have the following columns:
         - "Plate" : str
             The plate identifier.
-        - "Mutations" : str
+        - "amino-acid_substitutions" : str
             The mutations in the well.
-        - "pdt" : float
-            The pdt value for the well.
+        - products : list
+            List of product column names to normalize.
 
     Returns:
     - pd.DataFrame
@@ -540,16 +540,30 @@ def norm2parent(plate_df: pd.DataFrame, products: list) -> pd.DataFrame:
     )
 
     for product in products:
-        filtered_parents = (
-            parents.drop(index=detect_outliers_iqr(parents[product]))
-            .reset_index(drop=True)
-            .copy()
-        )
-
-        # normalize the whole plate to the mean of the filtered parent
-        plate_df[product + "_fold"] = (
-            plate_df[product] / filtered_parents[product].mean()
-        )
+        # Initialize fold column with NaN to handle plates without valid parents
+        plate_df[product + "_fold"] = np.nan
+        
+        # Only proceed with normalization if there are parent samples
+        if not parents.empty:
+            try:
+                filtered_parents = (
+                    parents.drop(index=detect_outliers_iqr(parents[product]))
+                    .reset_index(drop=True)
+                    .copy()
+                )
+                
+                # Only normalize if we have filtered parents and their mean is not zero
+                if not filtered_parents.empty and filtered_parents[product].mean() > 0:
+                    # normalize the whole plate to the mean of the filtered parent
+                    plate_df[product + "_fold"] = (
+                        plate_df[product] / filtered_parents[product].mean()
+                    )
+                else:
+                    print(f"Warning: No valid parent samples found for product '{product}' in plate {plate_df['Plate'].iloc[0]}. Fold values set to NaN.")
+            except Exception as e:
+                print(f"Error calculating fold values for product '{product}' in plate {plate_df['Plate'].iloc[0]}: {str(e)}")
+        else:
+            print(f"Warning: No parent samples found in plate {plate_df['Plate'].iloc[0]}. Fold values set to NaN.")
 
     return plate_df
 

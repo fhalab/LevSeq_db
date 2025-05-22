@@ -25,6 +25,20 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 # https://share.streamlit.io/streamlit/example-app-csv-wrangler/
 # """
 
+# Helper function that silently ignores messages (except errors)
+def silent_message(placeholder, message_type, message, delay=0):
+    """
+    Either silently ignores the message or only shows errors.
+    
+    Args:
+        placeholder: st.empty() placeholder to use for the message
+        message_type: 'info', 'success', 'warning', or 'error'
+        message: Text to display (only for errors)
+        delay: Ignored parameter
+    """
+    # Only display error messages
+    if message_type == 'error':
+        placeholder.error(message)
 
 # Set the config for the plotly charts
 config = {
@@ -33,7 +47,7 @@ config = {
     }
 }
 
-SHPAE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
+SHAPE_LIST = ["circle", "diamond", "triangle-up", "square", "cross"]
 
 # Function to validate SMILES string
 def validate_smiles(smiles_string):
@@ -75,13 +89,18 @@ def _max_width_():
     )
 
 
-st.title("LevSeq sequence function pairing")
-st.subheader(
-    "Beta mode, for issues post [here](https://github.com/fhalab/LevSeq) or via [email](mailto:levseqdb@gmail.com)"
-)
-st.subheader(
-    "Note! Your file name of your plate needs to match the plate name in the LevSeq file, see our [examples](https://github.com/fhalab/LevSeq) for details :) "
-)
+st.title("🧬 LevSeq Sequence Function Pairing")
+
+# Informational box with collapsible details
+with st.expander("ℹ️ Important Information", expanded=True):
+    st.markdown("""
+    - **Beta mode**: For issues, please post [here](https://github.com/fhalab/LevSeq) or email us at [levseqdb@gmail.com](mailto:levseqdb@gmail.com)
+    - **File naming**: Your plate filename must match the plate name in the LevSeq file
+    - **Examples**: Check our [GitHub repository](https://github.com/fhalab/LevSeq) for example files and formats
+    - **Navigation**: Use the expanders below to view different sections of the analysis
+    """)
+
+st.markdown("## 📤 Upload Your Data")
 c1, c2 = st.columns([6, 6])
 
 df, seq_variant, fitness_files = None, None, None
@@ -273,7 +292,7 @@ def make_scatter_plot(df, parents_list):
     type_order = ["Empty", "Low", "Deletion", "Truncated", "Parent", "Variant"]
 
     shape_mapping = {
-        p: s for p, s in zip(parents_list, SHPAE_LIST[: len(parents_list)])
+        p: s for p, s in zip(parents_list, SHAPE_LIST[: len(parents_list)])
     }
 
     df["size"] = [
@@ -332,9 +351,57 @@ def plot_bar_point(
     highlight_color="white",  # New: Color for the highlighted bar
     showlegend=True,
 ):
-
-    # Group data by `x` and calculate mean for bars
-    bar_data = df.groupby(x).mean()[y].reset_index()
+    # Make a copy of the dataframe to avoid modifying the original
+    df = df.copy()
+    
+    # Check if dataframe is empty
+    if df.empty:
+        return go.Figure(layout=dict(
+            title=f"No data available",
+            xaxis=dict(title=x_label or x),
+            yaxis=dict(title=y_label or y)
+        ))
+    
+    # Check if required columns exist
+    if x not in df.columns:
+        return go.Figure(layout=dict(
+            title=f"Column '{x}' not found in data",
+            xaxis=dict(title=x_label or x),
+            yaxis=dict(title=y_label or y)
+        ))
+    
+    # Ensure y column is numeric
+    if y in df.columns:
+        df[y] = pd.to_numeric(df[y], errors='coerce')
+    else:
+        # Return empty figure if y column doesn't exist
+        return go.Figure(layout=dict(
+            title=f"Column '{y}' not found in data",
+            xaxis=dict(title=x_label or x),
+            yaxis=dict(title=y_label or y)
+        ))
+    
+    # Drop NaN values before groupby
+    df = df.dropna(subset=[y])
+    
+    # Check if we still have data after dropping NaN values
+    if df.empty:
+        return go.Figure(layout=dict(
+            title=f"No valid data points after removing NaN values",
+            xaxis=dict(title=x_label or x),
+            yaxis=dict(title=y_label or y)
+        ))
+    
+    try:
+        # Group data by `x` and calculate mean for bars
+        bar_data = df.groupby(x).mean()[y].reset_index()
+    except Exception as e:
+        # Return empty figure with error message
+        return go.Figure(layout=dict(
+            title=f"Error in data processing: {str(e)}",
+            xaxis=dict(title=x_label or x),
+            yaxis=dict(title=y_label or y)
+        ))
 
     if bar_color:
         bar_kwargs = dict(marker_color=bar_color)
@@ -451,81 +518,120 @@ def agg_parent_plot(df, ys):
 def agg_mut_plot(sites_dict, single_ssm_df, ys):
     """
     Create individual plots for each parent and their respective sites.
+    Uses expanders to hide/show site data.
 
     Args:
     - sites_dict (dict): A dictionary where keys are parents and values are lists of sites.
     - single_ssm_df (pd.DataFrame): DataFrame containing the single site mutation data.
     - ys (list): List of columns to plot.
     """
-    for parent, sites in sites_dict.items():
-        st.subheader(f"Parent: {parent}")  # Section title for each parent
-
-        for site in sites:
+    # No info message - keeping the UI clean
+    
+    # Count parents and sites for a summary
+    total_parents = len(sites_dict)
+    total_sites = sum(len(sites) for sites in sites_dict.values())
+    st.write(f"**Summary:** {total_parents} parents with {total_sites} total sites available")
+    
+    # Sort parents alphabetically for consistent display
+    for parent in sorted(sites_dict.keys()):
+        sites = sites_dict[parent]
+        
+        # Create a parent section with a divider for better visual separation
+        st.markdown("---")
+        st.subheader(f"Parent: {parent}")
+        st.write(f"{len(sites)} sites available for this parent")
+        
+        # Group sites in columns to save vertical space
+        site_cols = st.columns(3)  # Adjust the number of columns as needed
+        
+        # Sort sites numerically to ensure consistent ordering
+        sorted_sites = sorted(sites, key=lambda x: int(str(x).split('_')[-1]) if str(x).split('_')[-1].isdigit() else 0)
+        
+        # Process each site for this parent
+        for i, site in enumerate(sorted_sites):
             # Preprocess the site-specific data
             site_df = prep_aa_order(
                 get_single_ssm_site_df(single_ssm_df, parent=parent, site=site)
             )
-
+            
             if site_df.empty:
-                st.warning(f"No data available for Parent: {parent}, Site: {site}")
-                continue  # Skip if there's no data for the site
-
-            sub_aas = site_df["amino-acid_substitutions"].unique()
-            # skip if there is only one AA other than the parent
-            if len(sub_aas) == 2:
-
-                sub_aa = sub_aas[0] if sub_aas[1] == "#PARENT#" else sub_aas[1]
-
-                st.markdown(
-                    f"Only {sub_aa} AA other than the parent for Parent: {parent}, Site: {site}"
-                )
-                name_col = [
-                    "Parent_Name",
-                    "amino-acid_substitutions",
-                    "# Mutations",
-                    "Type",
-                ]
-
-                # Aggregate with both mean and std for numerical columns
-                aggregated_df = (
-                    site_df[name_col + ys]
-                    .groupby(name_col)
-                    .agg({col: ["mean", "std"] for col in ys})
-                    .reset_index()
-                )
-
-                # Flatten the multi-level columns for readability
-                aggregated_df.columns = [
-                    "_".join(filter(None, col)).strip()
-                    if isinstance(col, tuple)
-                    else col
-                    for col in aggregated_df.columns
-                ]
-
-                # Display the aggregated DataFrame
-                st.dataframe(aggregated_df)
-
-                continue
-
-            site_info = (
-                site_df["parent_aa_loc"].unique()[0] if not site_df.empty else "Unknown"
-            )
-
-            # Generate plots for each `y` value
-            for y in ys:
-                if y in site_df.columns:
-                    fig = plot_bar_point(
-                        site_df,
-                        x="mut_aa",
-                        y=y,
-                        title=f"Parent: {parent}, Site: {site_info}, Metric: {get_y_label(y)}",
-                        if_max=False,
-                        highlight_label=site_info[0],  # New: Value to highlight
-                        highlight_color="white",  # New: Color for the highlighted bar
-                        colorscale="RdBu_r",
-                        showlegend=False,
+                continue  # Skip empty sites
+            
+            # Get readable site info
+            site_info = site_df["parent_aa_loc"].unique()[0] if "parent_aa_loc" in site_df.columns else site
+            
+            # Alternate between columns
+            col_idx = i % 3
+            
+            # Create an expander for this site - collapsed by default
+            with site_cols[col_idx].expander(f"🔍 Site {site_info}", expanded=False):
+                st.markdown(f"**Parent:** {parent}  \n**Site:** {site_info}")
+                
+                sub_aas = site_df["amino-acid_substitutions"].unique()
+                # Handle case if there is only one AA other than the parent
+                if len(sub_aas) == 2:
+                    sub_aa = sub_aas[0] if sub_aas[1] == "#PARENT#" else sub_aas[1]
+                    
+                    st.markdown(
+                        f"ℹ️ Only {sub_aa} AA other than the parent for this site"
                     )
-                    st.plotly_chart(fig, config=config)
+                    name_col = [
+                        "Parent_Name",
+                        "amino-acid_substitutions",
+                        "# Mutations",
+                        "Type",
+                    ]
+                    
+                    # Ensure columns are numeric before aggregation
+                    df_for_agg = site_df[name_col + ys].copy()
+                    # Convert each column in ys to numeric
+                    for col in ys:
+                        if col in df_for_agg.columns:
+                            df_for_agg[col] = pd.to_numeric(df_for_agg[col], errors='coerce')
+                    
+                    # Aggregate with both mean and std for numerical columns
+                    try:
+                        aggregated_df = (
+                            df_for_agg
+                            .groupby(name_col)
+                            .agg({col: ["mean", "std"] for col in ys if col in df_for_agg.columns})
+                            .reset_index()
+                        )
+                        
+                        # Flatten the multi-level columns for readability
+                        aggregated_df.columns = [
+                            "_".join(filter(None, col)).strip()
+                            if isinstance(col, tuple)
+                            else col
+                            for col in aggregated_df.columns
+                        ]
+                        
+                        # Display the aggregated DataFrame
+                        st.dataframe(aggregated_df)
+                    except Exception as e:
+                        st.error(f"Error in aggregation: {str(e)}")
+                    
+                    continue
+                
+                # Generate plots for each `y` value
+                for y in ys:
+                    if y in site_df.columns:
+                        try:
+                            st.write(f"**Metric:** {get_y_label(y)}")
+                            fig = plot_bar_point(
+                                site_df,
+                                x="mut_aa",
+                                y=y,
+                                title=f"Site {site_info}: {get_y_label(y)}",
+                                if_max=False,
+                                highlight_label=site_info[0] if len(site_info) > 0 else None,  # Value to highlight
+                                highlight_color="white",  # Color for the highlighted bar
+                                colorscale="RdBu_r",
+                                showlegend=False,
+                            )
+                            st.plotly_chart(fig, config=config)
+                        except Exception as e:
+                            st.error(f"Error generating plot for {y}: {str(e)}")
 
 
 def plot_single_ssm_avg(single_ssm_df, ys):
@@ -595,7 +701,6 @@ def plot_single_ssm_avg(single_ssm_df, ys):
 
 
 def plot_embxy(df: pd.DataFrame, product: str, parents_list: list):
-
     """
     Function to plot the x, y embedding coordinates colored by a specified metric using Plotly.
 
@@ -609,9 +714,24 @@ def plot_embxy(df: pd.DataFrame, product: str, parents_list: list):
     - fig : plotly.graph_objs.Figure
         A Plotly figure object containing the scatter plot.
     """
-
+    # Make a copy to avoid modifying the original
+    df = df.copy()
+    
+    # Check that required columns exist
+    required_cols = ["x_coordinate", "y_coordinate", product, "Parent_Name"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
+    
+    # Ensure product column is numeric
+    df[product] = pd.to_numeric(df[product], errors='coerce')
+    
+    # Drop rows with NaN in required columns
+    df = df.dropna(subset=["x_coordinate", "y_coordinate", product])
+    
+    # Create symbol mapping
     shape_mapping = {
-        p: s for p, s in zip(parents_list, SHPAE_LIST[: len(parents_list)])
+        p: s for p, s in zip(parents_list, SHAPE_LIST[: len(parents_list)])
     }
 
     # Create a scatter plot using Plotly Express
@@ -622,7 +742,7 @@ def plot_embxy(df: pd.DataFrame, product: str, parents_list: list):
         color=product,
         symbol="Parent_Name",
         symbol_map=shape_mapping,
-        hover_data=["ID", "amino-acid_substitutions", "Parent_Name"],
+        hover_data=["ID", "amino-acid_substitutions", "Parent_Name"] if "ID" in df.columns else ["amino-acid_substitutions", "Parent_Name"],
         title=f"{product} PCA in the sequence embedding space",
         color_continuous_scale="RdBu_r",
         labels={
@@ -665,12 +785,23 @@ def agg_embxy(df: pd.DataFrame, products: list, parents_list: list):
     - figs : list
         A list of Plotly figure objects containing the scatter plots.
     """
-
-    plots = [
-        plot_embxy(df, product, parents_list)
-        for product in products
-        if product in df.columns
-    ]
+    # Make a copy to avoid modifying the original
+    df = df.copy()
+    
+    # Ensure numeric data type for all product columns
+    for product in products:
+        if product in df.columns:
+            df[product] = pd.to_numeric(df[product], errors='coerce')
+    
+    plots = []
+    for product in products:
+        if product in df.columns:
+            try:
+                plot = plot_embxy(df, product, parents_list)
+                plots.append(plot)
+            except Exception as e:
+                st.error(f"Error plotting {product}: {str(e)}")
+                continue
 
     if not plots:
         return None
@@ -681,9 +812,7 @@ def agg_embxy(df: pd.DataFrame, products: list, parents_list: list):
 
 
 def seqfit_runner(smiles_dict):
-    status_text = st.empty()
     error_text = st.empty()
-    status_text.info(f"Running LevSeq using your files! Results will appear below shortly.")
 
     if fit_df is None or seq_variant is None:
         error_text.error("Please upload both Sequence and Fitness files.")
@@ -691,23 +820,20 @@ def seqfit_runner(smiles_dict):
     
     try:
         import traceback
-        status_text.info("Step 1: Processing plate files...")
-        # Process variants
+        
+        # Process variants with no status messages
         try:
             df = process_plate_files(
                 products=products, fit_df=fit_df, seq_df=seq_variant, plate_names=plate_names
             ).copy()
-            status_text.success("✅ Plate files processed successfully")
         except Exception as e:
             error_trace = traceback.format_exc()
             error_text.error(f"Error in process_plate_files: {str(e)}\n\nTraceback:\n{error_trace}")
             return
         
-        status_text.info("Step 2: Adding SMILES data...")
-        # Add SMILES data to the dataframe
+        # Add SMILES data to the dataframe without status messages
         for product, smiles in smiles_dict.items():
             df[f"{product}_SMILES"] = smiles
-        status_text.success("✅ SMILES data added successfully")
 
         fold_products = [f"{p}_fold" for p in products]
         parents_list = df["Parent_Name"].unique()
@@ -898,13 +1024,23 @@ def seqfit_runner(smiles_dict):
         os.makedirs("streamlit-data", exist_ok=True)
         standard_df.to_csv("streamlit-data/desired.csv", index=False)
         
-        # Show the standard format data
-        st.title("Standardized sequence-function data")
-        st.dataframe(standard_df)
+        # Results and download section
+        st.markdown("## 📊 Results and Downloads")
         
-        # Add download button for standard format only
-        from functionforDownloadButtons import download_button
-        download_button(standard_df, 'levseq_results.csv', 'Download results (CSV)')
+        # Download section in a more prominent container
+        download_container = st.container()
+        with download_container:
+            st.markdown("### Download Options")
+            from functionforDownloadButtons import download_button
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                download_button(standard_df, 'levseq_results.csv', '📥 Download Results (CSV)')
+            # We don't need to show the info message about the file format
+        
+        # Show the standard format data
+        st.markdown("### Standardized Sequence-Function Data")
+        with st.expander("View standardized data", expanded=False):
+            st.dataframe(standard_df)
 
         # ------------------------ Stats
         value_columns = products
@@ -927,24 +1063,36 @@ def seqfit_runner(smiles_dict):
             by="amount greater than parent mean", ascending=False
         )
         # ------------------------ Display stats data as a table
-        st.title("Statistics on the function data")
-        st.dataframe(stats_df)  # Interactive table with scrollbars
+        st.markdown("### Statistics on the Function Data")
+        with st.expander("View statistics data", expanded=False):
+            st.dataframe(stats_df)  # Interactive table with scrollbars
 
         # -------------------------- Make visualisations
+        st.markdown("## 📈 Data Visualizations")
 
-        make_alignment_plot(df)
-        make_scatter_plot(df, parents_list)
+        # Overview plots in expanders
+        with st.expander("📊 Alignment Counts", expanded=True):
+            make_alignment_plot(df)
+            
+        with st.expander("📊 Feature Scatter Plot", expanded=True):
+            make_scatter_plot(df, parents_list)
+            
         # Generate parent plot
-        st.header("Parent Aggregation")
-        agg_parent_plot(df, ys=fold_products)
+        st.markdown("### Parent Aggregation")
+        st.write("Compare overall performance across different parent sequences.")
+        with st.expander("📊 View parent aggregation plots", expanded=False):
+            agg_parent_plot(df, ys=fold_products)
 
         # Generate mutation plots
-        st.header("Mutation Aggregation")
+        st.markdown("### Mutation Aggregation")
+        st.write("Visualize mutation effects across all sites.")
         single_ssm_df = prep_single_ssm(df)
-        plot_single_ssm_avg(single_ssm_df, ys=fold_products)
+        with st.expander("🔥 View mutation heatmaps", expanded=False):
+            plot_single_ssm_avg(single_ssm_df, ys=fold_products)
 
         # Generate single SSM plots
-        st.header("Single SSM by Parent and Site")
+        st.markdown("### Single Site Mutations by Parent and Site")
+        st.write("Explore the effect of individual mutations at specific sites.")
         agg_mut_plot(
             sites_dict=get_parent2sitedict(single_ssm_df),
             single_ssm_df=single_ssm_df,
@@ -952,15 +1100,17 @@ def seqfit_runner(smiles_dict):
         )
 
         # Generate embedding plot
-        st.header("Sequence Embedding")
-        try:
-            st.subheader("esm2_t12_35M_UR50D PCA (will take a while)")
-            # take out all the stop codon containing sequences
-            df_xy = append_xy(df, products=fold_products)
-            agg_embxy(df_xy, products=fold_products, parents_list=parents_list)
-        except Exception as e:
-            st.error(f"Error generating embedding plot: {str(e)}")
-            st.info("Continuing with the rest of the analysis...")
+        st.markdown("### Sequence Embedding Analysis")
+        st.write("Visualize sequence relationships in embedding space.")
+        with st.expander("🧬 View sequence embedding plots (may take a while to load)", expanded=False):
+            try:
+                st.markdown("#### ESM2 Protein Language Model PCA")
+                # take out all the stop codon containing sequences
+                df_xy = append_xy(df, products=fold_products)
+                agg_embxy(df_xy, products=fold_products, parents_list=parents_list)
+            except Exception as e:
+                st.error(f"Error generating embedding plot: {str(e)}")
+                st.info("Continuing with the rest of the analysis...")
 
         st.subheader("Done LevSeq!")
     except Exception as e:
@@ -988,15 +1138,12 @@ def run_run():
         st.error(f"Missing valid SMILES for products: {', '.join(missing_smiles)}")
         return
     
-    # Don't use threading - it might be causing issues with Streamlit
-    # Just run the function directly in the main thread
-    st.info("Starting LevSeq processing...(running in main thread)")
-    
-    # Run directly without threading
+    # Run directly without any status messages
     seqfit_runner(smiles_dict)
 
 
 with c0:
+    st.markdown("## 🚀 Run Analysis")
     if c1 is not None and c2 is not None:
         # Check if all products have valid SMILES
         all_smiles_valid = True
@@ -1011,14 +1158,15 @@ with c0:
                         break
         
         if all_smiles_valid and products:
-            st.button("Run LevSeq <3", on_click=run_run, key="run_button")
+            st.markdown("### Your data is ready for analysis!")
+            st.button("🧪 Run LevSeq Analysis", on_click=run_run, key="run_button", type="primary")
         else:
-            st.warning("Please provide valid SMILES for all selected products before running.")
-            st.button("Run LevSeq <3", disabled=True, key="disabled_button")
+            st.warning("⚠️ Please provide valid SMILES for all selected products before running.")
+            st.button("Run LevSeq Analysis", disabled=True, key="disabled_button")
     else:
         st.info(
             f"""
-               Upload a variant file and a fitness file.
+            ⬆️ Please upload both a variant file and at least one fitness file above.
             """
         )
         st.stop()
